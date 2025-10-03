@@ -2,9 +2,11 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Languages, Copy, Check, ChevronRight, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { useEffect, useRef } from "react";
 
 interface BulletPoint {
   point: string;
@@ -45,6 +47,9 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
   const [selectedLanguage, setSelectedLanguage] = useState<string>("");
   const [copied, setCopied] = useState(false);
   const [expandedRefs, setExpandedRefs] = useState<Set<number>>(new Set());
+  const [showSourceModal, setShowSourceModal] = useState(false);
+  const [selectedReference, setSelectedReference] = useState<string>("");
+  const sourceContentRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const displaySummary = translatedSummary || summary;
@@ -112,25 +117,69 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
   };
 
   const openInSource = (referenceText: string) => {
-    if (!originalUrl) {
-      toast({
-        title: "Source not available",
-        description: "Original source URL is not available for this content",
-        variant: "destructive",
-      });
-      return;
-    }
+    setSelectedReference(referenceText);
+    setShowSourceModal(true);
+  };
 
-    // Try to create a URL with text fragment (works in Chrome and other modern browsers)
-    const encodedText = encodeURIComponent(referenceText.slice(0, 100));
-    const urlWithFragment = `${originalUrl}#:~:text=${encodedText}`;
+  // Highlight and scroll to reference in the modal
+  useEffect(() => {
+    if (showSourceModal && selectedReference && sourceContentRef.current) {
+      setTimeout(() => {
+        const content = sourceContentRef.current?.textContent || "";
+        const referenceStart = content.indexOf(selectedReference);
+        
+        if (referenceStart !== -1) {
+          // Find the element containing the reference
+          const highlightElement = sourceContentRef.current?.querySelector(`[data-highlight="true"]`);
+          if (highlightElement) {
+            highlightElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+      }, 100);
+    }
+  }, [showSourceModal, selectedReference]);
+
+  const renderContentWithHighlight = () => {
+    if (!selectedReference) return originalContent;
     
-    window.open(urlWithFragment, '_blank');
+    const index = originalContent.indexOf(selectedReference);
+    if (index === -1) {
+      // Try to find a partial match (first 50 chars)
+      const partialRef = selectedReference.slice(0, 50);
+      const partialIndex = originalContent.indexOf(partialRef);
+      
+      if (partialIndex === -1) {
+        return originalContent;
+      }
+      
+      const before = originalContent.slice(0, partialIndex);
+      const highlighted = originalContent.slice(partialIndex, partialIndex + selectedReference.length);
+      const after = originalContent.slice(partialIndex + selectedReference.length);
+      
+      return (
+        <>
+          {before}
+          <mark className="bg-yellow-200 dark:bg-yellow-800 px-1 rounded" data-highlight="true">
+            {highlighted}
+          </mark>
+          {after}
+        </>
+      );
+    }
     
-    toast({
-      title: "Opening source",
-      description: "Opening original content in new tab",
-    });
+    const before = originalContent.slice(0, index);
+    const highlighted = originalContent.slice(index, index + selectedReference.length);
+    const after = originalContent.slice(index + selectedReference.length);
+    
+    return (
+      <>
+        {before}
+        <mark className="bg-yellow-200 dark:bg-yellow-800 px-1 rounded" data-highlight="true">
+          {highlighted}
+        </mark>
+        {after}
+      </>
+    );
   };
 
   return (
@@ -236,7 +285,7 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
                             </>
                           )}
                         </Button>
-                        {originalUrl && (
+                        {originalUrl ? (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -245,6 +294,16 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
                           >
                             <ExternalLink className="w-3 h-3" />
                             View in source
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openInSource(bp.reference)}
+                            className="h-7 text-xs gap-1"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            Find in content
                           </Button>
                         )}
                       </div>
@@ -256,6 +315,39 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
           </div>
         </div>
       </Card>
+
+      <Dialog open={showSourceModal} onOpenChange={setShowSourceModal}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Original Content</DialogTitle>
+          </DialogHeader>
+          <div 
+            ref={sourceContentRef}
+            className="overflow-y-auto flex-1 text-sm leading-relaxed whitespace-pre-wrap p-4 bg-muted/30 rounded-lg"
+          >
+            {renderContentWithHighlight()}
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            {originalUrl && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const encodedText = encodeURIComponent(selectedReference.slice(0, 100));
+                  const urlWithFragment = `${originalUrl}#:~:text=${encodedText}`;
+                  window.open(urlWithFragment, '_blank');
+                }}
+                className="gap-2"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Open in browser
+              </Button>
+            )}
+            <Button onClick={() => setShowSourceModal(false)}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
