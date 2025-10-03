@@ -50,15 +50,15 @@ const Index = () => {
 
   const fetchYouTubeTranscript = async (url: string): Promise<string> => {
     try {
-      const { data, error } = await supabase.functions.invoke('extract-youtube-transcript', {
+      const { data, error } = await supabase.functions.invoke('get-youtube-captions', {
         body: { url }
       });
 
       if (error) throw error;
-      if (!data.transcript) throw new Error('No transcript available');
+      if (!data.text) throw new Error('No captions available');
 
       // Return both transcript text and timeline in formatted string
-      let result = data.transcript;
+      let result = data.text;
       
       if (data.timeline && data.timeline.length > 0) {
         result += '\n\n=== TIMELINE ===\n\n';
