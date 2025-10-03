@@ -101,7 +101,7 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
     });
   };
 
-  const getExpandedContext = (bulletPoint: string, referenceText: string): string => {
+  const getExpandedContext = (bulletPoint: string, referenceText: string): { text: string; keywords: string[] } => {
     // Extract key terms from the bullet point (remove common words)
     const commonWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'can', 'may', 'might'];
     const keywords = bulletPoint
@@ -119,7 +119,7 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
     }
     
     if (referenceIndex === -1) {
-      return referenceText;
+      return { text: referenceText, keywords };
     }
     
     // Search for additional relevant sections containing keywords
@@ -197,7 +197,27 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
       if (end < originalContent.length) expandedContent = expandedContent + '...';
     }
     
-    return expandedContent;
+    return { text: expandedContent, keywords };
+  };
+
+  const highlightKeywords = (text: string, keywords: string[]) => {
+    if (!keywords.length) return text;
+    
+    // Create a regex pattern that matches any of the keywords (case insensitive)
+    const pattern = new RegExp(`\\b(${keywords.join('|')})\\b`, 'gi');
+    const parts = text.split(pattern);
+    
+    return parts.map((part, index) => {
+      const isKeyword = keywords.some(kw => kw.toLowerCase() === part.toLowerCase());
+      if (isKeyword) {
+        return (
+          <mark key={index} className="bg-primary/20 dark:bg-primary/30 px-1 rounded font-semibold">
+            {part}
+          </mark>
+        );
+      }
+      return part;
+    });
   };
 
   const toggleReference = (index: number) => {
@@ -294,7 +314,10 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
                           <div className="space-y-2">
                             <div className="font-semibold text-foreground">Relevant Context:</div>
                             <div className="whitespace-pre-wrap">
-                              {getExpandedContext(bp.point, bp.reference)}
+                              {(() => {
+                                const { text, keywords } = getExpandedContext(bp.point, bp.reference);
+                                return highlightKeywords(text, keywords);
+                              })()}
                             </div>
                           </div>
                         ) : (
