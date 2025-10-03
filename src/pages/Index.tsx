@@ -24,6 +24,28 @@ const Index = () => {
     return url.includes('youtube.com') || url.includes('youtu.be');
   };
 
+  const extractVideoUrls = (html: string): string[] => {
+    const videoUrls: string[] = [];
+    
+    // Extract YouTube embeds
+    const youtubeMatches = html.matchAll(/(?:youtube\.com\/embed\/|youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/g);
+    for (const match of youtubeMatches) {
+      videoUrls.push(`https://www.youtube.com/watch?v=${match[1]}`);
+    }
+    
+    // Extract YouTube iframes
+    const iframeMatches = html.matchAll(/<iframe[^>]+src="([^"]*(?:youtube\.com|youtu\.be)[^"]*)"/gi);
+    for (const match of iframeMatches) {
+      const iframeSrc = match[1];
+      const videoIdMatch = iframeSrc.match(/(?:embed\/|watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+      if (videoIdMatch) {
+        videoUrls.push(`https://www.youtube.com/watch?v=${videoIdMatch[1]}`);
+      }
+    }
+    
+    return [...new Set(videoUrls)]; // Remove duplicates
+  };
+
   const fetchYouTubeTranscript = async (url: string): Promise<string> => {
     try {
       const { data, error } = await supabase.functions.invoke('extract-youtube-transcript', {
@@ -47,11 +69,35 @@ const Index = () => {
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
       
+      // Check for embedded videos
+      const videoUrls = extractVideoUrls(html);
+      let videoTranscripts = '';
+      
+      if (videoUrls.length > 0) {
+        toast({
+          title: "Found embedded videos",
+          description: `Extracting transcripts from ${videoUrls.length} video(s)...`,
+        });
+        
+        for (const videoUrl of videoUrls.slice(0, 3)) { // Limit to first 3 videos
+          try {
+            const transcript = await fetchYouTubeTranscript(videoUrl);
+            videoTranscripts += `\n\nVideo Transcript:\n${transcript}\n`;
+          } catch (error) {
+            console.log('Failed to extract transcript from embedded video:', videoUrl);
+          }
+        }
+      }
+      
       const scripts = doc.querySelectorAll('script, style, nav, header, footer');
       scripts.forEach(el => el.remove());
       
-      const content = doc.body.textContent || '';
-      return content.replace(/\s+/g, ' ').trim().slice(0, 15000);
+      const textContent = doc.body.textContent || '';
+      const pageText = textContent.replace(/\s+/g, ' ').trim();
+      
+      // Combine page text with video transcripts
+      const combinedContent = pageText + videoTranscripts;
+      return combinedContent.slice(0, 25000); // Increased limit to accommodate videos
     } catch (error) {
       throw new Error('Failed to fetch URL content. Please check the URL and try again.');
     }
