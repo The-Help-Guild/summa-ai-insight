@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Link as LinkIcon, Sparkles, Upload } from "lucide-react";
+import { FileText, Link as LinkIcon, Sparkles, Upload, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
@@ -22,15 +22,34 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
   const [activeTab, setActiveTab] = useState<'url' | 'text' | 'file'>('url');
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  const clearFile = () => {
+    setFileName("");
+    setFileContent("");
+    setFileError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab as 'url' | 'text' | 'file');
+    // Clear file when switching away from file tab
+    if (tab !== 'file') {
+      clearFile();
+    }
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Clear previous file state
+    clearFile();
+
     setFileName(file.name);
-    setFileContent("");
-    setFileError(null);
     setIsProcessingFile(true);
     const fileExtension = file.name.split('.').pop()?.toLowerCase();
 
@@ -138,7 +157,7 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
       </div>
 
       <div className="bg-card rounded-2xl shadow-lg border border-border overflow-hidden">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'url' | 'text' | 'file')} className="w-full">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <TabsList className="w-full grid grid-cols-3 rounded-none border-b bg-muted/30">
             <TabsTrigger value="url" className="gap-2 data-[state=active]:bg-background">
               <LinkIcon className="w-4 h-4" />
@@ -179,6 +198,7 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
             <TabsContent value="file" className="mt-0 space-y-4">
               <div className="space-y-3">
                 <Input
+                  ref={fileInputRef}
                   type="file"
                   accept=".txt,.pdf,.csv,.docx,.xlsm,.ods,.xlsx"
                   onChange={handleFileUpload}
@@ -196,8 +216,18 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
                   </div>
                 )}
                 {fileName && !isProcessingFile && !fileError && (
-                  <div className="text-sm text-muted-foreground">
-                    Selected: <span className="font-medium">{fileName}</span>
+                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                    <div className="text-sm text-muted-foreground flex-1">
+                      Selected: <span className="font-medium">{fileName}</span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={clearFile}
+                      className="h-6 w-6 hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   </div>
                 )}
                 {fileContent && !isProcessingFile && (
