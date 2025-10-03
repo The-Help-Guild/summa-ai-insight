@@ -110,15 +110,35 @@ async function fetchYouTubeTranscript(videoId: string): Promise<string> {
 
     // If captionTracks exist, try to fetch from them (with translation fallback)
     if (captionTracks.length > 0) {
-      console.log('Available caption tracks:', captionTracks.map((t: any) => t.languageCode || t.vssId || t.name?.simpleText));
+      console.log('Available caption tracks:', captionTracks.map((t: any) => ({
+        lang: t.languageCode || t.vssId,
+        kind: t.kind,
+        name: t.name?.simpleText
+      })));
 
-      // Prefer English captions or ASR in any language
-      const englishTrack = captionTracks.find((track: any) => {
+      // Priority: English auto-generated > English manual > Any auto-generated > Any language
+      const englishASR = captionTracks.find((track: any) => {
         const langCode = track.languageCode || track.vssId;
-        return langCode === 'en' || langCode?.startsWith('en') || langCode?.includes('.en');
+        const isEnglish = langCode === 'en' || langCode?.startsWith('en') || langCode?.includes('.en');
+        const isASR = track.kind === 'asr';
+        return isEnglish && isASR;
       });
-      const asrTrack = captionTracks.find((track: any) => track.kind === 'asr');
-      const selectedTrack = englishTrack || asrTrack || captionTracks[0];
+      
+      const englishManual = captionTracks.find((track: any) => {
+        const langCode = track.languageCode || track.vssId;
+        const isEnglish = langCode === 'en' || langCode?.startsWith('en') || langCode?.includes('.en');
+        return isEnglish && track.kind !== 'asr';
+      });
+      
+      const anyASR = captionTracks.find((track: any) => track.kind === 'asr');
+      
+      const selectedTrack = englishASR || englishManual || anyASR || captionTracks[0];
+      
+      console.log('Selected track:', {
+        lang: selectedTrack.languageCode || selectedTrack.vssId,
+        kind: selectedTrack.kind,
+        isASR: selectedTrack.kind === 'asr'
+      });
 
       let captionUrl: string = selectedTrack.baseUrl;
       if (!captionUrl) throw new Error('Caption URL not found');
@@ -127,6 +147,7 @@ async function fetchYouTubeTranscript(videoId: string): Promise<string> {
       const isEnglish = (selectedTrack.languageCode || selectedTrack.vssId || '').includes('en');
       if (!isEnglish && !/([?&])tlang=/.test(captionUrl)) {
         captionUrl += (captionUrl.includes('?') ? '&' : '?') + 'tlang=en';
+        console.log('Adding translation to English');
       }
 
       // Prefer rich format when supported
@@ -138,7 +159,7 @@ async function fetchYouTubeTranscript(videoId: string): Promise<string> {
       const transcriptXml = await tryFetchText(captionUrl, headers);
       const parsed = parseTranscriptXml(transcriptXml);
       if (parsed) {
-        console.log('Transcript extracted from captionTracks.');
+        console.log('Transcript extracted from captionTracks. Type:', selectedTrack.kind === 'asr' ? 'Auto-generated' : 'Manual');
         return parsed;
       }
       console.log('CaptionTracks path empty. Falling back to timedtext API.');
@@ -146,13 +167,13 @@ async function fetchYouTubeTranscript(videoId: string): Promise<string> {
       console.log('No captionTracks found in page. Falling back to timedtext API.');
     }
 
-    // Fallback 1: TimedText direct English (normal then ASR)
+    // Fallback 1: TimedText direct English ASR first, then manual, then other ASR
     const base = 'https://www.youtube.com/api/timedtext';
     const directCandidates = [
-      `lang=en&v=${videoId}&fmt=srv3`,
-      `lang=en&kind=asr&v=${videoId}&fmt=srv3`,
-      `lang=en&v=${videoId}`,
-      `lang=en&kind=asr&v=${videoId}`,
+      `lang=en&kind=asr&v=${videoId}&fmt=srv3`,  // English auto-generated (priority)
+      `lang=en&v=${videoId}&fmt=srv3`,           // English manual
+      `lang=en&kind=asr&v=${videoId}`,           // English auto-generated (fallback format)
+      `lang=en&v=${videoId}`,                    // English manual (fallback format)
     ];
     for (const q of directCandidates) {
       const xml = await tryFetchText(`${base}?${q}`, headers);
