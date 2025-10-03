@@ -19,6 +19,7 @@ interface Summary {
 interface SummaryDisplayProps {
   summary: Summary;
   originalContent: string;
+  onBack: () => void;
 }
 
 const LANGUAGES = [
@@ -28,6 +29,7 @@ const LANGUAGES = [
   { code: "de", name: "German" },
   { code: "it", name: "Italian" },
   { code: "pt", name: "Portuguese" },
+  { code: "ro", name: "Romanian" },
   { code: "ru", name: "Russian" },
   { code: "zh", name: "Chinese" },
   { code: "ja", name: "Japanese" },
@@ -36,7 +38,7 @@ const LANGUAGES = [
   { code: "hi", name: "Hindi" },
 ];
 
-export const SummaryDisplay = ({ summary, originalContent }: SummaryDisplayProps) => {
+export const SummaryDisplay = ({ summary, originalContent, onBack }: SummaryDisplayProps) => {
   const [translatedSummary, setTranslatedSummary] = useState<Summary | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<string>("");
@@ -100,6 +102,15 @@ export const SummaryDisplay = ({ summary, originalContent }: SummaryDisplayProps
   return (
     <div className="w-full max-w-4xl mx-auto space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between gap-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onBack}
+          className="gap-2"
+        >
+          Back
+        </Button>
+        <div className="flex-1" />
         <div className="flex items-center gap-2">
           <Languages className="w-5 h-5 text-muted-foreground" />
           <Select value={selectedLanguage} onValueChange={handleTranslate} disabled={isTranslating}>

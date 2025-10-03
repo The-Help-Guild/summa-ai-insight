@@ -3,20 +3,80 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Link as LinkIcon, Sparkles } from "lucide-react";
+import { FileText, Link as LinkIcon, Sparkles, Upload } from "lucide-react";
+import * as pdfjsLib from 'pdfjs-dist';
+import mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
+
+// Configure PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 interface ContentInputProps {
-  onSubmit: (content: string, type: 'url' | 'text') => void;
+  onSubmit: (content: string, type: 'url' | 'text' | 'file') => void;
   isLoading: boolean;
 }
 
 export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
   const [urlInput, setUrlInput] = useState("");
   const [textInput, setTextInput] = useState("");
-  const [activeTab, setActiveTab] = useState<'url' | 'text'>('url');
+  const [fileContent, setFileContent] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [activeTab, setActiveTab] = useState<'url' | 'text' | 'file'>('url');
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setFileName(file.name);
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+
+    try {
+      if (fileExtension === 'txt' || fileExtension === 'csv') {
+        const text = await file.text();
+        setFileContent(text);
+      } else if (fileExtension === 'pdf') {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = '';
+        
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map((item: any) => item.str).join(' ');
+          fullText += pageText + '\n';
+        }
+        
+        setFileContent(fullText);
+      } else if (fileExtension === 'docx') {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        setFileContent(result.value);
+      } else if (fileExtension === 'xlsm' || fileExtension === 'ods' || fileExtension === 'xlsx') {
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer);
+        let fullText = '';
+        
+        workbook.SheetNames.forEach(sheetName => {
+          const sheet = workbook.Sheets[sheetName];
+          const csv = XLSX.utils.sheet_to_csv(sheet);
+          fullText += `Sheet: ${sheetName}\n${csv}\n\n`;
+        });
+        
+        setFileContent(fullText);
+      }
+    } catch (error) {
+      console.error('Error reading file:', error);
+      setFileContent('');
+      setFileName('');
+    }
+  };
 
   const handleSubmit = () => {
-    const content = activeTab === 'url' ? urlInput : textInput;
+    let content = '';
+    if (activeTab === 'url') content = urlInput;
+    else if (activeTab === 'text') content = textInput;
+    else if (activeTab === 'file') content = fileContent;
+    
     if (content.trim()) {
       onSubmit(content, activeTab);
     }
@@ -40,8 +100,8 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
       </div>
 
       <div className="bg-card rounded-2xl shadow-lg border border-border overflow-hidden">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'url' | 'text')} className="w-full">
-          <TabsList className="w-full grid grid-cols-2 rounded-none border-b bg-muted/30">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'url' | 'text' | 'file')} className="w-full">
+          <TabsList className="w-full grid grid-cols-3 rounded-none border-b bg-muted/30">
             <TabsTrigger value="url" className="gap-2 data-[state=active]:bg-background">
               <LinkIcon className="w-4 h-4" />
               URL
@@ -49,6 +109,10 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
             <TabsTrigger value="text" className="gap-2 data-[state=active]:bg-background">
               <FileText className="w-4 h-4" />
               Text
+            </TabsTrigger>
+            <TabsTrigger value="file" className="gap-2 data-[state=active]:bg-background">
+              <Upload className="w-4 h-4" />
+              File
             </TabsTrigger>
           </TabsList>
           
@@ -74,9 +138,33 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
               />
             </TabsContent>
 
+            <TabsContent value="file" className="mt-0 space-y-4">
+              <div className="space-y-3">
+                <Input
+                  type="file"
+                  accept=".txt,.pdf,.csv,.docx,.xlsm,.ods,.xlsx"
+                  onChange={handleFileUpload}
+                  disabled={isLoading}
+                  className="cursor-pointer"
+                />
+                {fileName && (
+                  <div className="text-sm text-muted-foreground">
+                    Selected: <span className="font-medium">{fileName}</span>
+                  </div>
+                )}
+                {fileContent && (
+                  <div className="p-4 bg-muted/50 rounded-lg max-h-[150px] overflow-y-auto">
+                    <p className="text-sm text-muted-foreground line-clamp-6">
+                      {fileContent.substring(0, 300)}...
+                    </p>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
             <Button 
               onClick={handleSubmit}
-              disabled={isLoading || (activeTab === 'url' ? !urlInput.trim() : !textInput.trim())}
+              disabled={isLoading || (activeTab === 'url' ? !urlInput.trim() : activeTab === 'text' ? !textInput.trim() : !fileContent.trim())}
               size="lg"
               className="w-full h-12 text-base font-semibold bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-elegant transition-all"
             >

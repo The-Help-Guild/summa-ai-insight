@@ -37,7 +37,7 @@ const Index = () => {
     }
   };
 
-  const handleSubmit = async (input: string, type: 'url' | 'text') => {
+  const handleSubmit = async (input: string, type: 'url' | 'text' | 'file') => {
     setIsLoading(true);
     setSummary(null);
 
@@ -60,7 +60,7 @@ const Index = () => {
       });
 
       const { data, error } = await supabase.functions.invoke('summarize-content', {
-        body: { content, url: type === 'url' ? input : null }
+        body: { content }
       });
 
       if (error) throw error;
@@ -84,13 +84,18 @@ const Index = () => {
     }
   };
 
+  const handleBack = () => {
+    setSummary(null);
+    setOriginalContent("");
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
       <div className="container py-12 px-4 space-y-12">
         {!summary ? (
           <ContentInput onSubmit={handleSubmit} isLoading={isLoading} />
         ) : (
-          <SummaryDisplay summary={summary} originalContent={originalContent} />
+          <SummaryDisplay summary={summary} originalContent={originalContent} onBack={handleBack} />
         )}
         
         {isLoading && (
