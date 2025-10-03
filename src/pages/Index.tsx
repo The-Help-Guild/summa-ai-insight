@@ -6,6 +6,7 @@ import { Footer } from "@/components/Footer";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
+import { GlobalSearch } from "@/components/GlobalSearch";
 
 interface Summary {
   summary: string;
@@ -49,25 +50,36 @@ const Index = () => {
   };
 
   const fetchYouTubeTranscript = async (url: string): Promise<string> => {
+    // Try new captions function first, then fall back to the robust extractor
     try {
       const { data, error } = await supabase.functions.invoke('get-youtube-captions', {
-        body: { url }
+        body: { url, lang: 'en' }
       });
-
       if (error) throw error;
-      if (!data.text) throw new Error('No captions available');
+      if (!data?.text) throw new Error('No captions available');
 
-      // Return both transcript text and timeline in formatted string
-      let result = data.text;
-      
-      if (data.timeline && data.timeline.length > 0) {
-        result += '\n\n=== TIMELINE ===\n\n';
-        result += data.timeline.map((item: any) => `[${item.time}] ${item.text}`).join('\n');
+      let result = data.text as string;
+      if (Array.isArray(data.timeline) && data.timeline.length > 0) {
+        result += '\n\n=== TIMELINE ===\n\n' + data.timeline.map((item: any) => `[${item.time}] ${item.text}`).join('\n');
       }
-
       return result;
-    } catch (error) {
-      throw new Error('Failed to extract video transcript. The video may not have captions available.');
+    } catch (firstErr) {
+      console.log('Primary captions fetch failed, trying fallback extractor:', firstErr);
+      try {
+        const { data, error } = await supabase.functions.invoke('extract-youtube-transcript', {
+          body: { url }
+        });
+        if (error) throw error;
+        if (!data?.transcript) throw new Error('No transcript available');
+        let result = data.transcript as string;
+        if (Array.isArray(data.timeline) && data.timeline.length > 0) {
+          result += '\n\n=== TIMELINE ===\n\n' + data.timeline.map((item: any) => `[${item.time}] ${item.text}`).join('\n');
+        }
+        return result;
+      } catch (fallbackErr) {
+        console.error('Both caption methods failed:', fallbackErr);
+        throw new Error('Failed to extract video transcript. The video may not have captions available.');
+      }
     }
   };
 
@@ -184,7 +196,8 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex flex-col">
-      <div className="fixed top-4 right-4 z-50">
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+        <GlobalSearch summary={summary} originalContent={originalContent} originalUrl={originalUrl} />
         <ThemeToggle />
       </div>
       <div className="container py-12 px-4 space-y-12 flex-1">
