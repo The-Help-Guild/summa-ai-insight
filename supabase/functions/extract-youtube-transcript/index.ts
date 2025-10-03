@@ -112,6 +112,11 @@ async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; 
           headers: {
             'Content-Type': 'application/json',
             'User-Agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'application/json',
+            'Origin': 'https://www.youtube.com',
+            'Referer': 'https://www.youtube.com/',
+            'Cookie': 'CONSENT=YES+cb.20210328-17-p0.en+FX+123; SOCS=CAI; PREF=hl=en',
             'X-Youtube-Client-Name': '3',
             'X-Youtube-Client-Version': '19.09.37',
           },
@@ -122,7 +127,103 @@ async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; 
           const pdata = await pResp.json();
           const tracks: any[] =
             pdata?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
-          console.log('YouTubei caption tracks:', Array.isArray(tracks) ? tracks.length : 0);
+console.log('YouTubei caption tracks:', Array.isArray(tracks) ? tracks.length : 0);
+
+// If no tracks via ANDROID client, try TVHTML5 client as a fallback
+if (!Array.isArray(tracks) || tracks.length === 0) {
+  try {
+    console.log('No tracks via ANDROID client, trying TVHTML5...');
+    const tvBody = {
+      ...body,
+      context: {
+        client: {
+          hl: 'en',
+          gl: 'US',
+          clientName: 'TVHTML5',
+          clientVersion: '7.20220319',
+        },
+      },
+    };
+
+    const tvResp = await fetch(playerUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.110 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'application/json',
+        'Origin': 'https://www.youtube.com',
+        'Referer': 'https://www.youtube.com/',
+        'Cookie': 'CONSENT=YES+cb.20210328-17-p0.en+FX+123; SOCS=CAI; PREF=hl=en',
+        'X-Youtube-Client-Name': '7',
+        'X-Youtube-Client-Version': '7.20220319',
+      },
+      body: JSON.stringify(tvBody),
+    });
+
+    if (tvResp.ok) {
+      const tvData = await tvResp.json();
+      const tvTracks: any[] = tvData?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+      console.log('TVHTML5 caption tracks:', Array.isArray(tvTracks) ? tvTracks.length : 0);
+
+      if (Array.isArray(tvTracks) && tvTracks.length > 0) {
+        const isEn = (code?: string) => !!code && (code === 'en' || code.startsWith('en') || code.includes('.en'));
+        const selectTrackLocal = (tracksArr: any[]) => {
+          const englishASR = tracksArr.find((t: any) => isEn(t.languageCode || t.vssId) && t.kind === 'asr');
+          const englishManual = tracksArr.find((t: any) => isEn(t.languageCode || t.vssId) && t.kind !== 'asr');
+          const anyASR = tracksArr.find((t: any) => t.kind === 'asr');
+          return englishASR || englishManual || anyASR || tracksArr[0];
+        };
+        const chosen = selectTrackLocal(tvTracks);
+        let captionUrl: string = chosen?.baseUrl;
+        if (captionUrl) {
+          const langCode = chosen.languageCode || chosen.vssId || '';
+          const isEnglish = langCode.includes('en');
+          if (!isEnglish && !/([?&])tlang=/.test(captionUrl)) {
+            captionUrl += (captionUrl.includes('?') ? '&' : '?') + 'tlang=en';
+            console.log('Adding translation to EN on caption URL (TV)');
+          }
+          if (!/([?&])fmt=/.test(captionUrl)) captionUrl += '&fmt=srv3';
+
+          const capRes = await fetch(captionUrl, { headers: commonHeaders });
+          if (capRes.ok) {
+            const raw = await capRes.text();
+            let result;
+            if (raw.startsWith('WEBVTT')) {
+              result = parseVttTranscript(raw);
+            } else if (raw.includes('"events"')) {
+              result = parseJson3Transcript(raw);
+            } else {
+              result = parseXmlTranscript(raw);
+            }
+            if (result.text.length > 50) {
+              console.log('Transcript extracted via TVHTML5.');
+              return result;
+            }
+            // VTT explicit fallback
+            const vttUrl = captionUrl.replace(/([?&])fmt=[^&]*/,'$1fmt=vtt') + (captionUrl.includes('fmt=') ? '' : (captionUrl.includes('?') ? '&' : '?') + 'fmt=vtt');
+            const vttRes = await fetch(vttUrl, { headers: commonHeaders });
+            if (vttRes.ok) {
+              const vtt = await vttRes.text();
+              if (vtt && vtt.startsWith('WEBVTT')) {
+                const vttParsed = parseVttTranscript(vtt);
+                if (vttParsed.text.length > 50) {
+                  console.log('Transcript extracted via TVHTML5 (VTT fallback).');
+                  return vttParsed;
+                }
+              }
+            }
+          }
+        }
+      }
+    } else {
+      console.log('TVHTML5 player API call failed:', tvResp.status);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.log('TVHTML5 fallback failed:', msg);
+  }
+}
 
           const selectTrack = (tracks: any[]) => {
             const isEn = (code?: string) => !!code && (code === 'en' || code.startsWith('en') || code.includes('.en'));
