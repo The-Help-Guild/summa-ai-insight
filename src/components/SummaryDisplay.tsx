@@ -137,7 +137,32 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
     if (start > 0) context = '...' + context;
     if (end < originalContent.length) context = context + '...';
     
-    return context;
+  return context;
+  };
+
+  // Build a robust text fragment with prefix and suffix for better matching
+  const createTextFragment = (referenceText: string) => {
+    const normalize = (s: string) => s.replace(/\s+/g, ' ').trim();
+    const content = normalize(originalContent);
+    const ref = normalize(referenceText);
+
+    let index = content.indexOf(ref);
+    if (index === -1) {
+      const partial = ref.slice(0, Math.min(80, ref.length));
+      index = content.indexOf(partial);
+      if (index === -1) {
+        return `#:~:text=${encodeURIComponent(ref.slice(0, 200))}`;
+      }
+    }
+
+    const prefixStart = Math.max(0, index - 50);
+    const prefix = content.slice(prefixStart, index);
+    const startText = content.slice(index, Math.min(index + Math.min(200, ref.length), content.length));
+    const endIndex = index + ref.length;
+    const suffixEnd = Math.min(content.length, endIndex + 50);
+    const suffix = content.slice(endIndex, suffixEnd);
+
+    return `#:~:text=${encodeURIComponent(prefix)}-,${encodeURIComponent(startText)},-${encodeURIComponent(suffix)}`;
   };
 
   const toggleReference = (index: number) => {
@@ -152,15 +177,15 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
 
   const openInSource = (referenceText: string) => {
     if (originalUrl) {
-      // Open in browser with text fragment highlighting
-      const encodedText = encodeURIComponent(referenceText.slice(0, 200));
-      const urlWithFragment = `${originalUrl}#:~:text=${encodedText}`;
+      // Open in browser with a robust text fragment (prefix + excerpt + suffix)
+      const fragment = createTextFragment(referenceText);
+      const urlWithFragment = `${originalUrl}${fragment}`;
       
       window.open(urlWithFragment, '_blank');
       
       toast({
         title: "Opening in browser",
-        description: "Highlighted paragraph will be shown if supported by your browser",
+        description: "Attempting to highlight and scroll to the relevant paragraph",
       });
     } else {
       // Fallback to modal if no URL
@@ -377,8 +402,8 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
               <Button
                 variant="outline"
                 onClick={() => {
-                  const encodedText = encodeURIComponent(selectedReference.slice(0, 100));
-                  const urlWithFragment = `${originalUrl}#:~:text=${encodedText}`;
+                  const fragment = createTextFragment(selectedReference);
+                  const urlWithFragment = `${originalUrl}${fragment}`;
                   window.open(urlWithFragment, '_blank');
                 }}
                 className="gap-2"
