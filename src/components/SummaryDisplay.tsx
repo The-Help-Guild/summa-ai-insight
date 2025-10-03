@@ -101,38 +101,103 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
     });
   };
 
-  const getExpandedContext = (referenceText: string): string => {
-    const index = originalContent.indexOf(referenceText);
-    if (index === -1) {
-      // Try to find partial match
-      const partialRef = referenceText.slice(0, Math.min(50, referenceText.length));
-      const partialIndex = originalContent.indexOf(partialRef);
-      if (partialIndex === -1) {
-        return referenceText;
-      }
-      
-      // Get surrounding context (500 chars before and after)
-      const start = Math.max(0, partialIndex - 500);
-      const end = Math.min(originalContent.length, partialIndex + referenceText.length + 500);
-      let context = originalContent.slice(start, end);
-      
-      // Add ellipsis if truncated
-      if (start > 0) context = '...' + context;
-      if (end < originalContent.length) context = context + '...';
-      
-      return context;
+  const getExpandedContext = (bulletPoint: string, referenceText: string): string => {
+    // Extract key terms from the bullet point (remove common words)
+    const commonWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'can', 'may', 'might'];
+    const keywords = bulletPoint
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 3 && !commonWords.includes(word))
+      .slice(0, 5); // Take top 5 keywords
+    
+    // Find the reference location
+    let referenceIndex = originalContent.indexOf(referenceText);
+    if (referenceIndex === -1) {
+      const partialRef = referenceText.slice(0, Math.min(80, referenceText.length));
+      referenceIndex = originalContent.indexOf(partialRef);
     }
     
-    // Get surrounding context (500 chars before and after)
-    const start = Math.max(0, index - 500);
-    const end = Math.min(originalContent.length, index + referenceText.length + 500);
-    let context = originalContent.slice(start, end);
+    if (referenceIndex === -1) {
+      return referenceText;
+    }
     
-    // Add ellipsis if truncated
-    if (start > 0) context = '...' + context;
-    if (end < originalContent.length) context = context + '...';
+    // Search for additional relevant sections containing keywords
+    const relevantSections: Array<{start: number, end: number, score: number}> = [];
+    const contentLower = originalContent.toLowerCase();
     
-  return context;
+    // Split content into paragraphs (by double newlines or sentence boundaries)
+    const paragraphs = originalContent.split(/\n\n+/);
+    let currentPos = 0;
+    
+    for (const paragraph of paragraphs) {
+      const paragraphLower = paragraph.toLowerCase();
+      let score = 0;
+      
+      // Score each paragraph based on keyword matches
+      for (const keyword of keywords) {
+        const matches = (paragraphLower.match(new RegExp(keyword, 'g')) || []).length;
+        score += matches;
+      }
+      
+      if (score > 0) {
+        const start = originalContent.indexOf(paragraph, currentPos);
+        if (start !== -1) {
+          relevantSections.push({
+            start,
+            end: start + paragraph.length,
+            score
+          });
+        }
+      }
+      
+      currentPos += paragraph.length + 2; // Account for newlines
+    }
+    
+    // Sort by score and take top relevant sections
+    relevantSections.sort((a, b) => b.score - a.score);
+    
+    // Include the reference section and up to 2 additional highly relevant sections
+    const sectionsToInclude = relevantSections
+      .filter(section => 
+        Math.abs(section.start - referenceIndex) > 100 || // Different from reference location
+        (section.start <= referenceIndex && section.end >= referenceIndex) // Or contains reference
+      )
+      .slice(0, 3);
+    
+    // Combine sections
+    let expandedContent = '';
+    const sortedSections = sectionsToInclude.sort((a, b) => a.start - b.start);
+    
+    for (let i = 0; i < sortedSections.length; i++) {
+      const section = sortedSections[i];
+      let text = originalContent.slice(section.start, section.end).trim();
+      
+      // Add context around each section (200 chars)
+      const contextStart = Math.max(0, section.start - 200);
+      const contextEnd = Math.min(originalContent.length, section.end + 200);
+      text = originalContent.slice(contextStart, contextEnd).trim();
+      
+      if (contextStart > 0) text = '...' + text;
+      if (contextEnd < originalContent.length) text = text + '...';
+      
+      expandedContent += text;
+      if (i < sortedSections.length - 1) {
+        expandedContent += '\n\n---\n\n';
+      }
+    }
+    
+    // If no relevant sections found, fall back to basic context
+    if (!expandedContent) {
+      const start = Math.max(0, referenceIndex - 800);
+      const end = Math.min(originalContent.length, referenceIndex + referenceText.length + 800);
+      expandedContent = originalContent.slice(start, end);
+      
+      if (start > 0) expandedContent = '...' + expandedContent;
+      if (end < originalContent.length) expandedContent = expandedContent + '...';
+    }
+    
+    return expandedContent;
   };
 
   const toggleReference = (index: number) => {
@@ -227,9 +292,9 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
                       <blockquote className="text-sm text-muted-foreground italic pl-4 border-l-2 border-muted-foreground/20">
                         {expandedRefs.has(index) ? (
                           <div className="space-y-2">
-                            <div className="font-semibold text-foreground">Expanded Context:</div>
+                            <div className="font-semibold text-foreground">Relevant Context:</div>
                             <div className="whitespace-pre-wrap">
-                              "{getExpandedContext(bp.reference)}"
+                              {getExpandedContext(bp.point, bp.reference)}
                             </div>
                           </div>
                         ) : (
