@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.extract-youtube-transcript]
 verify_jwt = false
+
+[functions.get-youtube-captions]
+verify_jwt = false
+
+[functions.fetch-url-content]
+verify_jwt = false
