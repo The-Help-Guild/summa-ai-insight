@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ContentInput } from "@/components/ContentInput";
 import { SummaryDisplay } from "@/components/SummaryDisplay";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
@@ -91,6 +92,9 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+      <div className="fixed top-4 right-4 z-50">
+        <ThemeToggle />
+      </div>
       <div className="container py-12 px-4 space-y-12">
         {!summary ? (
           <ContentInput onSubmit={handleSubmit} isLoading={isLoading} />
