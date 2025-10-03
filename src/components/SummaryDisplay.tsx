@@ -101,15 +101,29 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
     });
   };
 
-  const getExpandedContext = (bulletPoint: string, referenceText: string): { text: string; keywords: string[] } => {
-    // Extract key terms from the bullet point (remove common words)
-    const commonWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'can', 'may', 'might'];
-    const keywords = bulletPoint
-      .toLowerCase()
-      .replace(/[^\w\s]/g, ' ')
-      .split(/\s+/)
-      .filter(word => word.length > 3 && !commonWords.includes(word))
-      .slice(0, 5); // Take top 5 keywords
+  const getExpandedContext = (bulletPoint: string, referenceText: string): { text: string; propositions: string[] } => {
+    // Extract meaningful propositions (phrases) from the bullet point
+    // Split by common delimiters but keep phrases together
+    const propositions = bulletPoint
+      .split(/[;:,]/)
+      .map(phrase => phrase.trim())
+      .filter(phrase => phrase.length > 15) // Only keep substantial phrases
+      .map(phrase => {
+        // Remove common starting words to get the core proposition
+        return phrase.replace(/^(the|a|an|and|or|but|however|therefore|this|these|that|those)\s+/i, '').trim();
+      })
+      .filter(phrase => phrase.length > 10);
+    
+    // If no good propositions found, extract key noun phrases
+    if (propositions.length === 0) {
+      const words = bulletPoint.split(/\s+/);
+      for (let i = 0; i < words.length - 2; i++) {
+        const phrase = words.slice(i, Math.min(i + 5, words.length)).join(' ');
+        if (phrase.length > 15) {
+          propositions.push(phrase);
+        }
+      }
+    }
     
     // Find the reference location
     let referenceIndex = originalContent.indexOf(referenceText);
@@ -119,10 +133,10 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
     }
     
     if (referenceIndex === -1) {
-      return { text: referenceText, keywords };
+      return { text: referenceText, propositions };
     }
     
-    // Search for additional relevant sections containing keywords
+    // Search for additional relevant sections containing propositions
     const relevantSections: Array<{start: number, end: number, score: number}> = [];
     const contentLower = originalContent.toLowerCase();
     
@@ -134,10 +148,19 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
       const paragraphLower = paragraph.toLowerCase();
       let score = 0;
       
-      // Score each paragraph based on keyword matches
-      for (const keyword of keywords) {
-        const matches = (paragraphLower.match(new RegExp(keyword, 'g')) || []).length;
-        score += matches;
+      // Score each paragraph based on proposition matches
+      for (const proposition of propositions) {
+        const propLower = proposition.toLowerCase();
+        // Check for partial matches of the proposition
+        const words = propLower.split(/\s+/).filter(w => w.length > 3);
+        let matchCount = 0;
+        for (const word of words) {
+          if (paragraphLower.includes(word)) matchCount++;
+        }
+        // Score based on how many words from the proposition appear
+        if (matchCount > words.length * 0.5) {
+          score += matchCount;
+        }
       }
       
       if (score > 0) {
@@ -197,27 +220,95 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
       if (end < originalContent.length) expandedContent = expandedContent + '...';
     }
     
-    return { text: expandedContent, keywords };
+    return { text: expandedContent, propositions };
   };
 
-  const highlightKeywords = (text: string, keywords: string[]) => {
-    if (!keywords.length) return text;
+  const highlightPropositions = (text: string, propositions: string[]) => {
+    if (!propositions.length) return text;
     
-    // Create a regex pattern that matches any of the keywords (case insensitive)
-    const pattern = new RegExp(`\\b(${keywords.join('|')})\\b`, 'gi');
-    const parts = text.split(pattern);
+    // Find all matches of propositions (or partial matches with significant overlap)
+    const matches: Array<{start: number, end: number, proposition: string}> = [];
+    const textLower = text.toLowerCase();
     
-    return parts.map((part, index) => {
-      const isKeyword = keywords.some(kw => kw.toLowerCase() === part.toLowerCase());
-      if (isKeyword) {
-        return (
-          <mark key={index} className="bg-primary/20 dark:bg-primary/30 px-1 rounded font-semibold">
-            {part}
-          </mark>
-        );
+    for (const prop of propositions) {
+      const propWords = prop.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+      if (propWords.length === 0) continue;
+      
+      // Look for sequences where most words of the proposition appear close together
+      const windowSize = Math.max(prop.length, 50);
+      for (let i = 0; i < text.length - windowSize; i++) {
+        const window = text.slice(i, i + windowSize);
+        const windowLower = window.toLowerCase();
+        let matchingWords = 0;
+        
+        for (const word of propWords) {
+          if (windowLower.includes(word)) matchingWords++;
+        }
+        
+        // If more than 60% of proposition words are in this window, mark it
+        if (matchingWords > propWords.length * 0.6) {
+          // Find the actual extent of the matching text
+          let start = i;
+          let end = i + windowSize;
+          
+          // Adjust to word boundaries
+          while (start > 0 && /\w/.test(text[start - 1])) start--;
+          while (end < text.length && /\w/.test(text[end])) end++;
+          
+          matches.push({ start, end, proposition: prop });
+          i += windowSize; // Skip ahead to avoid overlapping matches
+          break;
+        }
       }
-      return part;
-    });
+    }
+    
+    // Sort matches by position and merge overlapping ones
+    matches.sort((a, b) => a.start - b.start);
+    const mergedMatches: typeof matches = [];
+    for (const match of matches) {
+      if (mergedMatches.length === 0) {
+        mergedMatches.push(match);
+      } else {
+        const last = mergedMatches[mergedMatches.length - 1];
+        if (match.start <= last.end) {
+          // Merge overlapping matches
+          last.end = Math.max(last.end, match.end);
+        } else {
+          mergedMatches.push(match);
+        }
+      }
+    }
+    
+    // Build the highlighted result
+    if (mergedMatches.length === 0) return text;
+    
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    
+    for (let i = 0; i < mergedMatches.length; i++) {
+      const match = mergedMatches[i];
+      
+      // Add text before the match
+      if (match.start > lastIndex) {
+        parts.push(text.slice(lastIndex, match.start));
+      }
+      
+      // Add highlighted match
+      parts.push(
+        <mark key={i} className="bg-primary/20 dark:bg-primary/30 px-1 rounded font-semibold">
+          {text.slice(match.start, match.end)}
+        </mark>
+      );
+      
+      lastIndex = match.end;
+    }
+    
+    // Add remaining text
+    if (lastIndex < text.length) {
+      parts.push(text.slice(lastIndex));
+    }
+    
+    return parts;
   };
 
   const toggleReference = (index: number) => {
@@ -315,8 +406,8 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
                             <div className="font-semibold text-foreground">Relevant Context:</div>
                             <div className="whitespace-pre-wrap">
                               {(() => {
-                                const { text, keywords } = getExpandedContext(bp.point, bp.reference);
-                                return highlightKeywords(text, keywords);
+                                const { text, propositions } = getExpandedContext(bp.point, bp.reference);
+                                return highlightPropositions(text, propositions);
                               })()}
                             </div>
                           </div>
