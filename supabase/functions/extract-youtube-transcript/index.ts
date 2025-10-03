@@ -95,11 +95,13 @@ async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; 
             client: {
               hl: 'en',
               gl: 'US',
-              clientName: 'WEB',
-              clientVersion,
+              clientName: 'ANDROID',
+              clientVersion: '19.09.37',
+              androidSdkVersion: 30,
             },
           },
           videoId,
+          params: 'CgIQBg==',
           playbackContext: { contentPlaybackContext: { html5Preference: 'HTML5_PREF_WANTS' } },
           racyCheckOk: true,
           contentCheckOk: true,
@@ -108,10 +110,10 @@ async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; 
         const pResp = await fetch(playerUrl, {
           method: 'POST',
           headers: {
-            ...commonHeaders,
             'Content-Type': 'application/json',
-            'X-Youtube-Client-Name': '1',
-            'X-Youtube-Client-Version': clientVersion,
+            'User-Agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip',
+            'X-Youtube-Client-Name': '3',
+            'X-Youtube-Client-Version': '19.09.37',
           },
           body: JSON.stringify(body),
         });
