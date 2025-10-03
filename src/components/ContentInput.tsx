@@ -5,12 +5,13 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Link as LinkIcon, Sparkles, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import * as pdfjsLib from 'pdfjs-dist';
+import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 
 // Configure PDF.js worker with unpkg CDN (more reliable for ES modules)
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+GlobalWorkerOptions.workerSrc = pdfWorker;
 
 interface ContentInputProps {
   onSubmit: (content: string, type: 'url' | 'text' | 'file') => void;
@@ -47,7 +48,7 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
       } else if (fileExtension === 'pdf') {
         console.log('Starting PDF processing...');
         const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pdf = await getDocument({ data: arrayBuffer }).promise;
         console.log('PDF loaded, pages:', pdf.numPages);
         let fullText = '';
         
