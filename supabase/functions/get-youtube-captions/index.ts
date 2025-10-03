@@ -26,50 +26,42 @@ serve(async (req) => {
     console.log('Trying manual captions:', captionUrl);
     
     let response = await fetch(captionUrl);
-    let xml = '';
+    let xml = await response.text();
+    console.log('Manual captions response length:', xml.length, 'Has text tags:', xml.includes('<text'));
     
-    if (response.ok) {
-      xml = await response.text();
-    }
-    
-    // If no manual captions, try auto-generated
-    if (!xml || xml.length < 100) {
+    // If no valid captions, try auto-generated
+    if (!xml.includes('<text')) {
       captionUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${lang}&kind=asr`;
       console.log('Trying auto-generated captions:', captionUrl);
       response = await fetch(captionUrl);
-      
-      if (response.ok) {
-        xml = await response.text();
-      }
+      xml = await response.text();
+      console.log('Auto-generated response length:', xml.length, 'Has text tags:', xml.includes('<text'));
     }
     
     // If requested language not available, try English as fallback
-    if ((!xml || xml.length < 100) && lang !== 'en') {
+    if (!xml.includes('<text') && lang !== 'en') {
       console.log('Trying English fallback');
       captionUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en`;
       response = await fetch(captionUrl);
-      
-      if (response.ok) {
-        xml = await response.text();
-      }
+      xml = await response.text();
+      console.log('English response length:', xml.length, 'Has text tags:', xml.includes('<text'));
       
       // Try English auto-generated
-      if (!xml || xml.length < 100) {
+      if (!xml.includes('<text')) {
         captionUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&kind=asr`;
         response = await fetch(captionUrl);
-        
-        if (response.ok) {
-          xml = await response.text();
-        }
+        xml = await response.text();
+        console.log('English ASR response length:', xml.length, 'Has text tags:', xml.includes('<text'));
       }
     }
     
-    if (!xml || xml.length < 100) {
+    if (!xml.includes('<text')) {
+      console.log('No valid captions found. Last XML response:', xml.substring(0, 200));
       throw new Error('No captions available for this video');
     }
 
     const parsed = parseXmlTranscript(xml);
-    console.log('Successfully extracted transcript');
+    console.log('Successfully extracted transcript, length:', parsed.text.length);
 
     return new Response(
       JSON.stringify(parsed),
