@@ -55,7 +55,15 @@ const Index = () => {
       if (error) throw error;
       if (!data.transcript) throw new Error('No transcript available');
 
-      return data.transcript;
+      // Return both transcript text and timeline in formatted string
+      let result = data.transcript;
+      
+      if (data.timeline && data.timeline.length > 0) {
+        result += '\n\n=== TIMELINE ===\n\n';
+        result += data.timeline.map((item: any) => `[${item.time}] ${item.text}`).join('\n');
+      }
+
+      return result;
     } catch (error) {
       throw new Error('Failed to extract video transcript. The video may not have captions available.');
     }

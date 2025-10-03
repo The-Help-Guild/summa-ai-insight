@@ -27,9 +27,12 @@ serve(async (req) => {
       throw new Error('No transcript available for this video');
     }
 
-    console.log('Transcript extracted successfully, length:', transcript.length);
+    console.log('Transcript extracted successfully, text length:', transcript.text.length, 'timeline items:', transcript.timeline.length);
     
-    return new Response(JSON.stringify({ transcript }), {
+    return new Response(JSON.stringify({ 
+      transcript: transcript.text,
+      timeline: transcript.timeline 
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
@@ -61,7 +64,7 @@ function extractVideoId(url: string): string | null {
   return null;
 }
 
-async function fetchYouTubeTranscript(videoId: string): Promise<string> {
+async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; timeline: Array<{ time: string; text: string }> }> {
   try {
     // 1) Try YouTubei player API first (more reliable for ASR tracks)
     console.log('Attempting YouTubei player API for captions...');
@@ -137,10 +140,10 @@ async function fetchYouTubeTranscript(videoId: string): Promise<string> {
               const capRes = await fetch(captionUrl, { headers: commonHeaders });
               if (capRes.ok) {
                 const xml = await capRes.text();
-                const parsed = parseXmlTranscript(xml);
-                if (parsed.length > 50) {
+                const result = parseXmlTranscript(xml);
+                if (result.text.length > 50) {
                   console.log('Transcript extracted via YouTubei.');
-                  return parsed;
+                  return result;
                 }
               }
             }
@@ -183,10 +186,10 @@ async function fetchYouTubeTranscript(videoId: string): Promise<string> {
           const text = await response.text();
           if (text && text.length > 100 && (text.includes('<transcript') || text.includes('"events"'))) {
             console.log(`Success with: ${(attempt as any).desc}`);
-            let parsed = '';
-            if (text.includes('"events"')) parsed = parseJson3Transcript(text);
-            else parsed = parseXmlTranscript(text);
-            if (parsed.length > 50) return parsed;
+            let result;
+            if (text.includes('"events"')) result = parseJson3Transcript(text);
+            else result = parseXmlTranscript(text);
+            if (result.text.length > 50) return result;
           }
         }
       } catch (e) {
@@ -220,10 +223,10 @@ async function fetchYouTubeTranscript(videoId: string): Promise<string> {
             const trackResponse = await fetch(trackUrl, { headers: commonHeaders });
             if (trackResponse.ok) {
               const text = await trackResponse.text();
-              const parsed = parseXmlTranscript(text);
-              if (parsed.length > 50) {
+              const result = parseXmlTranscript(text);
+              if (result.text.length > 50) {
                 console.log(`Success with track: lang=${lang}, kind=${kind}`);
-                return parsed;
+                return result;
               }
             }
           } catch (e) {
@@ -241,14 +244,16 @@ async function fetchYouTubeTranscript(videoId: string): Promise<string> {
   }
 }
 
-function parseXmlTranscript(xml: string): string {
-  if (!xml || !xml.includes('<text')) return '';
+function parseXmlTranscript(xml: string): { text: string; timeline: Array<{ time: string; text: string }> } {
+  if (!xml || !xml.includes('<text')) return { text: '', timeline: [] };
   
-  const textMatches = xml.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g);
+  const textMatches = xml.matchAll(/<text[^>]*start="([^"]*)"[^>]*>([\s\S]*?)<\/text>/g);
   const parts: string[] = [];
+  const timeline: Array<{ time: string; text: string }> = [];
   
   for (const match of textMatches) {
-    let text = match[1]
+    const startTime = match[1];
+    let text = match[2]
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
@@ -260,32 +265,61 @@ function parseXmlTranscript(xml: string): string {
     
     if (text) {
       parts.push(text);
+      
+      // Format timestamp as MM:SS or HH:MM:SS
+      const seconds = parseFloat(startTime);
+      const hours = Math.floor(seconds / 3600);
+      const mins = Math.floor((seconds % 3600) / 60);
+      const secs = Math.floor(seconds % 60);
+      const timeStr = hours > 0 
+        ? `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+        : `${mins}:${secs.toString().padStart(2, '0')}`;
+      
+      timeline.push({ time: timeStr, text });
     }
   }
   
-  return parts.join(' ');
+  return { text: parts.join(' '), timeline };
 }
 
-function parseJson3Transcript(json: string): string {
+function parseJson3Transcript(json: string): { text: string; timeline: Array<{ time: string; text: string }> } {
   try {
     const data = JSON.parse(json);
     const parts: string[] = [];
+    const timeline: Array<{ time: string; text: string }> = [];
     
     if (data.events) {
       for (const event of data.events) {
-        if (event.segs) {
+        if (event.segs && event.tStartMs !== undefined) {
+          const eventText: string[] = [];
           for (const seg of event.segs) {
             if (seg.utf8) {
-              parts.push(seg.utf8.trim());
+              eventText.push(seg.utf8.trim());
             }
+          }
+          
+          if (eventText.length > 0) {
+            const text = eventText.join('');
+            parts.push(text);
+            
+            // Format timestamp
+            const seconds = event.tStartMs / 1000;
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            const timeStr = hours > 0 
+              ? `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+              : `${mins}:${secs.toString().padStart(2, '0')}`;
+            
+            timeline.push({ time: timeStr, text });
           }
         }
       }
     }
     
-    return parts.join(' ');
+    return { text: parts.join(' '), timeline };
   } catch (e) {
     console.error('Failed to parse JSON3 transcript:', e);
-    return '';
+    return { text: '', timeline: [] };
   }
 }
