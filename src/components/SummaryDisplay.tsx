@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -361,6 +361,62 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
     }
     setExpandedRefs(newExpanded);
   };
+
+  // Auto-translate expanded sections when language changes or after translation
+  useEffect(() => {
+    // If not in translated mode, reset caches
+    if (!translatedSummary || !selectedLanguage) {
+      if (translatedExpandedTexts.size) setTranslatedExpandedTexts(new Map());
+      if (translatingRefs.size) setTranslatingRefs(new Set());
+      return;
+    }
+
+    const indicesToTranslate = Array.from(expandedRefs).filter((i) => !translatedExpandedTexts.has(i));
+    if (indicesToTranslate.length === 0) return;
+
+    const languageName = LANGUAGES.find((l) => l.code === selectedLanguage)?.name || selectedLanguage;
+
+    (async () => {
+      // Mark as translating
+      setTranslatingRefs((prev) => {
+        const s = new Set(prev);
+        indicesToTranslate.forEach((i) => s.add(i));
+        return s;
+      });
+
+      try {
+        const results = await Promise.all(
+          indicesToTranslate.map(async (i) => {
+            const originalBp = originalSummaryBeforeTranslation.bulletPoints[i];
+            const fallbackBp = displaySummary.bulletPoints[i];
+            const { text } = getExpandedContext(
+              originalBp?.point || fallbackBp?.point,
+              originalBp?.reference || fallbackBp?.reference
+            );
+            const { data, error } = await supabase.functions.invoke('translate-content', {
+              body: { text, targetLanguage: languageName },
+            });
+            if (error) throw error;
+            return { i, t: data.translatedText as string };
+          })
+        );
+
+        setTranslatedExpandedTexts((prev) => {
+          const m = new Map(prev);
+          results.forEach(({ i, t }) => m.set(i, t));
+          return m;
+        });
+      } catch (e) {
+        console.error('Batch translation error:', e);
+      } finally {
+        setTranslatingRefs((prev) => {
+          const s = new Set(prev);
+          indicesToTranslate.forEach((i) => s.delete(i));
+          return s;
+        });
+      }
+    })();
+  }, [translatedSummary, selectedLanguage, expandedRefs]);
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
