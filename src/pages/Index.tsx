@@ -1,11 +1,103 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState } from "react";
+import { ContentInput } from "@/components/ContentInput";
+import { SummaryDisplay } from "@/components/SummaryDisplay";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { Loader2 } from "lucide-react";
+
+interface Summary {
+  summary: string;
+  bulletPoints: Array<{
+    point: string;
+    reference: string;
+  }>;
+}
 
 const Index = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [originalContent, setOriginalContent] = useState("");
+  const { toast } = useToast();
+
+  const fetchUrlContent = async (url: string): Promise<string> => {
+    try {
+      const response = await fetch(url);
+      const html = await response.text();
+      
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      
+      const scripts = doc.querySelectorAll('script, style, nav, header, footer');
+      scripts.forEach(el => el.remove());
+      
+      const content = doc.body.textContent || '';
+      return content.replace(/\s+/g, ' ').trim().slice(0, 15000);
+    } catch (error) {
+      throw new Error('Failed to fetch URL content. Please check the URL and try again.');
+    }
+  };
+
+  const handleSubmit = async (input: string, type: 'url' | 'text') => {
+    setIsLoading(true);
+    setSummary(null);
+
+    try {
+      let content = input;
+      
+      if (type === 'url') {
+        toast({
+          title: "Fetching content...",
+          description: "Extracting text from the URL",
+        });
+        content = await fetchUrlContent(input);
+      }
+
+      setOriginalContent(content);
+
+      toast({
+        title: "Analyzing content...",
+        description: "AI is generating your summary",
+      });
+
+      const { data, error } = await supabase.functions.invoke('summarize-content', {
+        body: { content, url: type === 'url' ? input : null }
+      });
+
+      if (error) throw error;
+
+      setSummary(data.summary);
+      
+      toast({
+        title: "Summary ready!",
+        description: "Your content has been analyzed successfully",
+      });
+
+    } catch (error) {
+      console.error('Error:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to process content. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+      <div className="container py-12 px-4 space-y-12">
+        {!summary ? (
+          <ContentInput onSubmit={handleSubmit} isLoading={isLoading} />
+        ) : (
+          <SummaryDisplay summary={summary} originalContent={originalContent} />
+        )}
+        
+        {isLoading && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+        )}
       </div>
     </div>
   );
