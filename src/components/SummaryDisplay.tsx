@@ -330,6 +330,12 @@ export const SummaryDisplay = ({
       if (end < originalContent.length) expandedContent = expandedContent + '...';
     }
     
+    // Limit to 500 words maximum
+    const words = expandedContent.split(/\s+/);
+    if (words.length > 500) {
+      expandedContent = words.slice(0, 500).join(' ') + '...';
+    }
+    
     return { text: expandedContent, propositions };
   };
 
