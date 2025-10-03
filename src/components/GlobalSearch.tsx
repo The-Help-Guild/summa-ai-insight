@@ -12,32 +12,33 @@ interface GlobalSearchProps {
   summary: Summary | null;
   originalContent: string;
   originalUrl?: string;
+  onNavigate?: (section: 'summary' | 'bullets' | 'content', bulletIndex?: number, query?: string) => void;
 }
 
-export function GlobalSearch({ summary, originalContent, originalUrl }: GlobalSearchProps) {
+export function GlobalSearch({ summary, originalContent, originalUrl, onNavigate }: GlobalSearchProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
   const sections = useMemo(() => {
-    const list: { title: string; text: string }[] = [];
-    if (summary?.summary) list.push({ title: "Summary", text: summary.summary });
+    const list: { title: string; text: string; section: 'summary' | 'bullets' | 'content' }[] = [];
+    if (summary?.summary) list.push({ title: "Summary", text: summary.summary, section: 'summary' });
     if (summary?.bulletPoints?.length) {
-      list.push({ title: "Bullet points", text: summary.bulletPoints.map(b => `• ${b.point} (${b.reference})`).join("\n") });
+      summary.bulletPoints.forEach((b, idx) => {
+        list.push({ title: `Bullet point ${idx + 1}`, text: `${b.point} (${b.reference})`, section: 'bullets' });
+      });
     }
-    if (originalContent) list.push({ title: "Original content", text: originalContent });
-    if (originalUrl) list.push({ title: "Original URL", text: originalUrl });
+    if (originalContent) list.push({ title: "Original content", text: originalContent, section: 'content' });
     return list;
-  }, [summary, originalContent, originalUrl]);
+  }, [summary, originalContent]);
 
   const results = useMemo(() => {
     const q = query.trim();
-    if (!q) return [] as { title: string; matches: { snippet: string }[] }[];
+    if (!q) return [] as { title: string; section: 'summary' | 'bullets' | 'content'; bulletIndex?: number; matches: { snippet: string }[] }[];
     const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
 
-    return sections.map(sec => {
+    return sections.map((sec, secIdx) => {
       const matches: { snippet: string }[] = [];
-      // Collect up to 10 snippets per section
-      const window = 60; // chars around match
+      const window = 60;
       let m;
       while ((m = regex.exec(sec.text)) && matches.length < 10) {
         const start = Math.max(0, m.index - window);
@@ -47,11 +48,24 @@ export function GlobalSearch({ summary, originalContent, originalUrl }: GlobalSe
         const suffix = sec.text.slice(m.index + m[0].length, end);
         const snippet = `${prefix}<mark class=\"bg-primary/20 text-primary rounded px-0.5\">${match}</mark>${suffix}`;
         matches.push({ snippet });
-        if (m.index === regex.lastIndex) regex.lastIndex++; // avoid zero-length loops
+        if (m.index === regex.lastIndex) regex.lastIndex++;
       }
-      return { title: sec.title, matches };
+      
+      let bulletIndex: number | undefined;
+      if (sec.section === 'bullets' && sec.title.startsWith('Bullet point ')) {
+        bulletIndex = parseInt(sec.title.replace('Bullet point ', '')) - 1;
+      }
+      
+      return { title: sec.title, section: sec.section, bulletIndex, matches };
     }).filter(r => r.matches.length > 0);
   }, [sections, query]);
+
+  const handleResultClick = (result: typeof results[0]) => {
+    if (onNavigate) {
+      onNavigate(result.section, result.bulletIndex, query);
+      setOpen(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -77,7 +91,11 @@ export function GlobalSearch({ summary, originalContent, originalUrl }: GlobalSe
             ) : (
               <div className="space-y-6">
                 {results.map((res, idx) => (
-                  <div key={idx} className="space-y-2">
+                  <div 
+                    key={idx} 
+                    className="space-y-2 cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
+                    onClick={() => handleResultClick(res)}
+                  >
                     <div className="text-sm font-medium text-muted-foreground">{res.title} ({res.matches.length})</div>
                     <div className="space-y-2">
                       {res.matches.map((m, i) => (

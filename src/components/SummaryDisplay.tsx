@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,6 +21,8 @@ interface SummaryDisplayProps {
   originalContent: string;
   originalUrl?: string;
   onBack: () => void;
+  searchHighlight?: { section: 'summary' | 'bullets' | 'content'; bulletIndex?: number; query?: string } | null;
+  onSearchComplete?: () => void;
 }
 
 const LANGUAGES = [
@@ -39,7 +41,7 @@ const LANGUAGES = [
   { code: "hi", name: "Hindi" },
 ];
 
-export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }: SummaryDisplayProps) => {
+export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack, searchHighlight, onSearchComplete }: SummaryDisplayProps) => {
   const [translatedSummary, setTranslatedSummary] = useState<Summary | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<string>("");
@@ -48,9 +50,44 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
   const [originalSummaryBeforeTranslation, setOriginalSummaryBeforeTranslation] = useState<Summary>(summary);
   const [translatedExpandedTexts, setTranslatedExpandedTexts] = useState<Map<number, string>>(new Map());
   const [translatingRefs, setTranslatingRefs] = useState<Set<number>>(new Set());
+  const [highlightQuery, setHighlightQuery] = useState<string>("");
+  const bulletRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const summaryRef = useRef<HTMLDivElement | null>(null);
   const { toast } = useToast();
 
   const displaySummary = translatedSummary || summary;
+
+  // Handle search highlight scrolling
+  useEffect(() => {
+    if (searchHighlight) {
+      setHighlightQuery(searchHighlight.query || "");
+      
+      if (searchHighlight.section === 'bullets' && searchHighlight.bulletIndex !== undefined) {
+        const bulletRef = bulletRefs.current[searchHighlight.bulletIndex];
+        if (bulletRef) {
+          setTimeout(() => {
+            bulletRef.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            bulletRef.classList.add('ring-2', 'ring-primary', 'ring-offset-2');
+            setTimeout(() => {
+              bulletRef.classList.remove('ring-2', 'ring-primary', 'ring-offset-2');
+              if (onSearchComplete) onSearchComplete();
+            }, 2000);
+          }, 100);
+        }
+      } else if (searchHighlight.section === 'summary' && summaryRef.current) {
+        setTimeout(() => {
+          summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (onSearchComplete) onSearchComplete();
+        }, 100);
+      }
+    }
+  }, [searchHighlight, onSearchComplete]);
+
+  const highlightText = (text: string, query: string) => {
+    if (!query) return text;
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
+    return text.replace(regex, '<mark class="bg-primary/20 text-primary rounded px-0.5">$1</mark>');
+  };
 
   const handleTranslate = async (languageCode: string) => {
     if (!languageCode) return;
@@ -468,13 +505,14 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
 
       <Card className="p-8 bg-gradient-to-br from-card to-card/95 border-border/50 shadow-soft">
         <div className="space-y-6">
-          <div className="space-y-3">
+          <div className="space-y-3" ref={summaryRef}>
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
               Overview
             </h2>
-            <p className="text-lg leading-relaxed text-foreground/90">
-              {displaySummary.summary}
-            </p>
+            <p 
+              className="text-lg leading-relaxed text-foreground/90"
+              dangerouslySetInnerHTML={{ __html: highlightText(displaySummary.summary, highlightQuery) }}
+            />
           </div>
 
           <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent" />
@@ -487,15 +525,17 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
               {displaySummary.bulletPoints.map((bp, index) => (
                 <div 
                   key={index}
-                  className="group relative pl-6 pb-4 last:pb-0 border-l-2 border-primary/30 hover:border-primary transition-colors"
+                  ref={(el) => bulletRefs.current[index] = el}
+                  className="group relative pl-6 pb-4 last:pb-0 border-l-2 border-primary/30 hover:border-primary transition-all rounded-lg"
                 >
                   <div className="absolute left-0 top-0 -translate-x-1/2 w-4 h-4 rounded-full bg-primary/20 group-hover:bg-primary/40 transition-colors flex items-center justify-center">
                     <ChevronRight className="w-3 h-3 text-primary" />
                   </div>
                   <div className="space-y-2">
-                    <p className="text-base font-medium leading-relaxed">
-                      {bp.point}
-                    </p>
+                    <p 
+                      className="text-base font-medium leading-relaxed"
+                      dangerouslySetInnerHTML={{ __html: highlightText(bp.point, highlightQuery) }}
+                    />
                     <div className="space-y-2">
                       <blockquote className="text-sm text-muted-foreground italic pl-4 border-l-2 border-muted-foreground/20">
                         {expandedRefs.has(index) ? (

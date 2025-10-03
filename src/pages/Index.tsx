@@ -21,6 +21,7 @@ const Index = () => {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [originalContent, setOriginalContent] = useState("");
   const [originalUrl, setOriginalUrl] = useState("");
+  const [searchHighlight, setSearchHighlight] = useState<{ section: 'summary' | 'bullets' | 'content'; bulletIndex?: number; query?: string } | null>(null);
   const { toast } = useToast();
 
   const isYouTubeUrl = (url: string): boolean => {
@@ -192,19 +193,36 @@ const Index = () => {
     setSummary(null);
     setOriginalContent("");
     setOriginalUrl("");
+    setSearchHighlight(null);
+  };
+
+  const handleNavigate = (section: 'summary' | 'bullets' | 'content', bulletIndex?: number, query?: string) => {
+    setSearchHighlight({ section, bulletIndex, query });
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex flex-col">
       <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
-        <GlobalSearch summary={summary} originalContent={originalContent} originalUrl={originalUrl} />
+        <GlobalSearch 
+          summary={summary} 
+          originalContent={originalContent} 
+          originalUrl={originalUrl}
+          onNavigate={handleNavigate}
+        />
         <ThemeToggle />
       </div>
       <div className="container py-12 px-4 space-y-12 flex-1">
         {!summary ? (
           <ContentInput onSubmit={handleSubmit} isLoading={isLoading} />
         ) : (
-          <SummaryDisplay summary={summary} originalContent={originalContent} originalUrl={originalUrl} onBack={handleBack} />
+          <SummaryDisplay 
+            summary={summary} 
+            originalContent={originalContent} 
+            originalUrl={originalUrl} 
+            onBack={handleBack}
+            searchHighlight={searchHighlight}
+            onSearchComplete={() => setSearchHighlight(null)}
+          />
         )}
         
         {isLoading && (
