@@ -3,6 +3,7 @@ import { ContentInput } from "@/components/ContentInput";
 import { SummaryDisplay } from "@/components/SummaryDisplay";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Footer } from "@/components/Footer";
+import { PrivacyNotice } from "@/components/PrivacyNotice";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
@@ -216,7 +217,10 @@ const Index = () => {
       </div>
       <div className="container py-12 px-4 space-y-12 flex-1">
         {!summary ? (
-          <ContentInput onSubmit={handleSubmit} isLoading={isLoading} />
+          <>
+            <ContentInput onSubmit={handleSubmit} isLoading={isLoading} />
+            <PrivacyNotice />
+          </>
         ) : (
           <SummaryDisplay 
             summary={summary} 
