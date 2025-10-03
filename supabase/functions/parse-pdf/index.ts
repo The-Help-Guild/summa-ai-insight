@@ -28,30 +28,32 @@ serve(async (req) => {
     console.log('Extracting text from PDF, size:', bytes.length);
 
     // Dynamically import pdfjs with proper configuration
-    const { getDocument } = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.mjs");
+    const { getDocument } = await import('https://esm.sh/pdfjs-serverless');
 
-    // Load the PDF document without a worker (Deno env)
-    const loadingTask = getDocument({ data: bytes, disableWorker: true });
-    const pdf = await loadingTask.promise;
+    // Load the PDF document using serverless PDF.js build
+    const document = await getDocument({
+      data: bytes,
+      useSystemFonts: true,
+    }).promise;
     
-    console.log('PDF loaded, pages:', pdf.numPages);
+    console.log('PDF loaded, pages:', document.numPages);
 
     let fullText = '';
     
     // Extract text from each page
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
+    for (let pageNum = 1; pageNum <= document.numPages; pageNum++) {
+      const page = await document.getPage(pageNum);
       const textContent = await page.getTextContent();
       
       // Concatenate all text items
-      const pageText = textContent.items
+      const pageText = (textContent.items as any[])
         .map((item: any) => item.str)
         .join(' ');
       
       fullText += pageText + '\n';
     }
 
-    console.log('Extracted text length:', fullText.length, 'pages:', pdf.numPages);
+    console.log('Extracted text length:', fullText.length, 'pages:', document.numPages);
 
     if (!fullText || fullText.trim().length < 50) {
       console.log('PDF appears to be scanned or has minimal text');
@@ -60,7 +62,7 @@ serve(async (req) => {
         JSON.stringify({ 
           text: fullText || 'This PDF appears to contain scanned images with no selectable text. Please ensure your PDF has selectable text or use an OCR tool to convert scanned pages.',
           warning: 'Limited text extracted - PDF may contain scanned images',
-          pages: pdf.numPages
+          pages: document.numPages
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -69,7 +71,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         text: fullText.trim(),
-        pages: pdf.numPages
+        pages: document.numPages
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
