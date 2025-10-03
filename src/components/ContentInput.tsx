@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Link as LinkIcon, Sparkles, Upload, X } from "lucide-react";
+import { FileText, Link as LinkIcon, Sparkles, Upload, X, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
@@ -50,6 +50,16 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
     if (tab !== 'file') {
       clearFile();
     }
+  };
+
+  const handleRefreshAll = () => {
+    setUrlInput("");
+    setTextInput("");
+    clearFile();
+    toast({
+      title: "Inputs cleared",
+      description: "All input fields have been reset",
+    });
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -171,22 +181,36 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
       </div>
 
       <div className="bg-card rounded-2xl shadow-lg border border-border overflow-hidden">
+        <div className="flex items-center border-b bg-muted/30">
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="flex-1">
+            <TabsList className="w-full grid grid-cols-3 rounded-none bg-transparent border-0">
+              <TabsTrigger value="url" className="gap-2 data-[state=active]:bg-background">
+                <LinkIcon className="w-4 h-4" />
+                URL
+              </TabsTrigger>
+              <TabsTrigger value="text" className="gap-2 data-[state=active]:bg-background">
+                <FileText className="w-4 h-4" />
+                Text
+              </TabsTrigger>
+              <TabsTrigger value="file" className="gap-2 data-[state=active]:bg-background">
+                <Upload className="w-4 h-4" />
+                File
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRefreshAll}
+            disabled={isLoading || isProcessingFile}
+            className="mr-2 hover:bg-muted shrink-0"
+            title="Clear all inputs"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
+        
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <TabsList className="w-full grid grid-cols-3 rounded-none border-b bg-muted/30">
-            <TabsTrigger value="url" className="gap-2 data-[state=active]:bg-background">
-              <LinkIcon className="w-4 h-4" />
-              URL
-            </TabsTrigger>
-            <TabsTrigger value="text" className="gap-2 data-[state=active]:bg-background">
-              <FileText className="w-4 h-4" />
-              Text
-            </TabsTrigger>
-            <TabsTrigger value="file" className="gap-2 data-[state=active]:bg-background">
-              <Upload className="w-4 h-4" />
-              File
-            </TabsTrigger>
-          </TabsList>
-          
           <div className="p-6">
             <TabsContent value="url" className="mt-0 space-y-4">
               <Input
