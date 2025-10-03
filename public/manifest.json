@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "Smart Summarizer - AI-Powered Content Analysis",
   "short_name": "Smart Summarizer",
   "description": "Extract key insights from any content instantly with AI. Get clear bullet points with references and translate to any language.",
@@ -28,20 +29,6 @@
     }
   ],
   "categories": ["productivity", "utilities", "education"],
-  "screenshots": [
-    {
-      "src": "/screenshot-wide.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide"
-    },
-    {
-      "src": "/screenshot-narrow.png",
-      "sizes": "750x1334",
-      "type": "image/png",
-      "form_factor": "narrow"
-    }
-  ],
   "shortcuts": [
     {
       "name": "New Summary",
