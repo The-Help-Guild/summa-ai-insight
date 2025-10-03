@@ -30,7 +30,17 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
     setFileContent("");
     setFileError(null);
     if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+      // Temporarily remove the onChange handler to prevent recursion
+      const currentInput = fileInputRef.current;
+      const originalOnChange = currentInput.onchange;
+      currentInput.onchange = null;
+      currentInput.value = "";
+      // Restore the onChange handler after a tick
+      setTimeout(() => {
+        if (currentInput) {
+          currentInput.onchange = originalOnChange;
+        }
+      }, 0);
     }
   };
 
@@ -44,12 +54,16 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    
+    // Don't process if no file (e.g., when clearing)
+    if (!file) {
+      return;
+    }
 
-    // Clear previous file state
-    clearFile();
-
+    // Clear previous file state only if we have a new file
     setFileName(file.name);
+    setFileContent("");
+    setFileError(null);
     setIsProcessingFile(true);
     const fileExtension = file.name.split('.').pop()?.toLowerCase();
 
