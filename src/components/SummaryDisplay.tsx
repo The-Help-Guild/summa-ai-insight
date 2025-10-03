@@ -151,8 +151,22 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
   };
 
   const openInSource = (referenceText: string) => {
-    setSelectedReference(referenceText);
-    setShowSourceModal(true);
+    if (originalUrl) {
+      // Open in browser with text fragment highlighting
+      const encodedText = encodeURIComponent(referenceText.slice(0, 200));
+      const urlWithFragment = `${originalUrl}#:~:text=${encodedText}`;
+      
+      window.open(urlWithFragment, '_blank');
+      
+      toast({
+        title: "Opening in browser",
+        description: "Highlighted paragraph will be shown if supported by your browser",
+      });
+    } else {
+      // Fallback to modal if no URL
+      setSelectedReference(referenceText);
+      setShowSourceModal(true);
+    }
   };
 
   // Highlight and scroll to reference in the modal
@@ -328,27 +342,15 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
                             </>
                           )}
                         </Button>
-                        {originalUrl ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openInSource(bp.reference)}
-                            className="h-7 text-xs gap-1"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                            View in source
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openInSource(bp.reference)}
-                            className="h-7 text-xs gap-1"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                            Find in content
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openInSource(bp.reference)}
+                          className="h-7 text-xs gap-1"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          {originalUrl ? 'View in source' : 'Find in content'}
+                        </Button>
                       </div>
                     </div>
                   </div>
