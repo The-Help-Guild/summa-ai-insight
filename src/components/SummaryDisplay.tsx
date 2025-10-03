@@ -280,9 +280,9 @@ export const SummaryDisplay = ({
       const section = sortedSections[i];
       let text = originalContent.slice(section.start, section.end).trim();
       
-      // Add context around each section (200 chars)
-      const contextStart = Math.max(0, section.start - 200);
-      const contextEnd = Math.min(originalContent.length, section.end + 200);
+      // Add context around each section (500 chars)
+      const contextStart = Math.max(0, section.start - 500);
+      const contextEnd = Math.min(originalContent.length, section.end + 500);
       text = originalContent.slice(contextStart, contextEnd).trim();
       
       if (contextStart > 0) text = '...' + text;
@@ -296,8 +296,8 @@ export const SummaryDisplay = ({
     
     // If no relevant sections found, fall back to basic context
     if (!expandedContent) {
-      const start = Math.max(0, referenceIndex - 800);
-      const end = Math.min(originalContent.length, referenceIndex + referenceText.length + 800);
+      const start = Math.max(0, referenceIndex - 1500);
+      const end = Math.min(originalContent.length, referenceIndex + referenceText.length + 1500);
       expandedContent = originalContent.slice(start, end);
       
       if (start > 0) expandedContent = '...' + expandedContent;
