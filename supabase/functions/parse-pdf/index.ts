@@ -58,9 +58,11 @@ serve(async (req) => {
     if (!fullText || fullText.trim().length < 50) {
       console.log('PDF appears to be scanned or has minimal text');
       
+      const warningMessage = `⚠️ This PDF appears to be scanned or contains mostly images with minimal selectable text (only ${fullText.trim().length} characters extracted).\n\nTo summarize this PDF, please:\n1. Use an OCR tool to convert it to searchable text, or\n2. Open it in Adobe Acrobat or similar tool and re-save as a text-selectable PDF, or\n3. Copy and paste the text content manually into the Text tab.\n\nExtracted content: ${fullText.trim() || '(none)'}`;
+      
       return new Response(
         JSON.stringify({ 
-          text: fullText || 'This PDF appears to contain scanned images with no selectable text. Please ensure your PDF has selectable text or use an OCR tool to convert scanned pages.',
+          text: warningMessage,
           warning: 'Limited text extracted - PDF may contain scanned images',
           pages: document.numPages
         }),
