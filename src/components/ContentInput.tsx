@@ -5,13 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Link as LinkIcon, Sparkles, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
-
-// Configure PDF.js worker with unpkg CDN (more reliable for ES modules)
-GlobalWorkerOptions.workerSrc = pdfWorker;
+import { supabase } from "@/integrations/supabase/client";
 
 interface ContentInputProps {
   onSubmit: (content: string, type: 'url' | 'text' | 'file') => void;
@@ -46,21 +42,29 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
         console.log('Text file content length:', text.length);
         setFileContent(text);
       } else if (fileExtension === 'pdf') {
-        console.log('Starting PDF processing...');
+        console.log('Starting PDF processing with document parser...');
+        
+        toast({
+          title: "Processing PDF",
+          description: "Extracting text with OCR support. This may take a moment...",
+        });
+
+        // Convert file to base64 for edge function
         const arrayBuffer = await file.arrayBuffer();
-        const pdf = await getDocument({ data: arrayBuffer }).promise;
-        console.log('PDF loaded, pages:', pdf.numPages);
-        let fullText = '';
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
         
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const textContent = await page.getTextContent();
-          const pageText = textContent.items.map((item: any) => item.str).join(' ');
-          fullText += pageText + '\n';
-        }
-        
-        console.log('PDF text extracted, length:', fullText.length);
-        setFileContent(fullText);
+        const { data, error } = await supabase.functions.invoke('parse-pdf', {
+          body: { 
+            pdfData: base64,
+            fileName: file.name
+          }
+        });
+
+        if (error) throw new Error(error.message || 'Failed to parse PDF');
+        if (!data?.text) throw new Error('No text extracted from PDF');
+
+        console.log('PDF text extracted, length:', data.text.length);
+        setFileContent(data.text);
       } else if (fileExtension === 'docx') {
         console.log('Starting DOCX processing...');
         const arrayBuffer = await file.arrayBuffer();
@@ -82,7 +86,7 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
         console.log('Spreadsheet text extracted, length:', fullText.length);
         setFileContent(fullText);
       } else {
-        throw new Error('Unsupported file format');
+        throw new Error('Unsupported file format. Please upload TXT, CSV, PDF, DOCX, or spreadsheet files.');
       }
       
       toast({

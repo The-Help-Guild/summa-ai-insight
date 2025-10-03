@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.fetch-url-content]
 verify_jwt = false
+
+[functions.parse-pdf]
+verify_jwt = false
