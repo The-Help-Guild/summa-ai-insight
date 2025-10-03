@@ -69,8 +69,11 @@ async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; 
     // 1) Try YouTubei player API first (more reliable for ASR tracks)
     console.log('Attempting YouTubei player API for captions...');
     const commonHeaders = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
       'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7',
+      'Origin': 'https://www.youtube.com',
+      'Referer': 'https://www.youtube.com/',
     };
 
     const watchResp = await fetch(`https://www.youtube.com/watch?v=${videoId}`, { headers: commonHeaders });
@@ -139,11 +142,31 @@ async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; 
 
               const capRes = await fetch(captionUrl, { headers: commonHeaders });
               if (capRes.ok) {
-                const xml = await capRes.text();
-                const result = parseXmlTranscript(xml);
+                const raw = await capRes.text();
+                let result;
+                if (raw.startsWith('WEBVTT')) {
+                  result = parseVttTranscript(raw);
+                } else if (raw.includes('"events"')) {
+                  result = parseJson3Transcript(raw);
+                } else {
+                  result = parseXmlTranscript(raw);
+                }
                 if (result.text.length > 50) {
                   console.log('Transcript extracted via YouTubei.');
                   return result;
+                }
+                // Fallback: try VTT explicitly
+                const vttUrl = captionUrl.replace(/([?&])fmt=[^&]*/,'$1fmt=vtt') + (captionUrl.includes('fmt=') ? '' : (captionUrl.includes('?') ? '&' : '?') + 'fmt=vtt');
+                const vttRes = await fetch(vttUrl, { headers: commonHeaders });
+                if (vttRes.ok) {
+                  const vtt = await vttRes.text();
+                  if (vtt && vtt.startsWith('WEBVTT')) {
+                    const vttParsed = parseVttTranscript(vtt);
+                    if (vttParsed.text.length > 50) {
+                      console.log('Transcript extracted via YouTubei (VTT fallback).');
+                      return vttParsed;
+                    }
+                  }
                 }
               }
             }
@@ -167,7 +190,10 @@ async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; 
       { lang: 'en', fmt: 'srv3', desc: 'English manual (srv3)' },
       { lang: 'en', fmt: 'json3', desc: 'English manual (json3)' },
       { lang: 'en', desc: 'English manual' },
+      { lang: 'en', fmt: 'vtt', desc: 'English VTT' },
+      { lang: 'en', kind: 'asr', fmt: 'vtt', desc: 'English auto-generated (vtt)' },
       { kind: 'asr', tlang: 'en', fmt: 'srv3', desc: 'Any ASR translated to English' },
+      { tlang: 'en', fmt: 'vtt', desc: 'Any track translated to English (vtt)' },
     ];
 
     for (const attempt of attempts) {
@@ -184,12 +210,15 @@ async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; 
         const response = await fetch(url, { headers: commonHeaders });
         if (response.ok) {
           const text = await response.text();
-          if (text && text.length > 100 && (text.includes('<transcript') || text.includes('"events"'))) {
-            console.log(`Success with: ${(attempt as any).desc}`);
+          if (text && text.length > 50) {
             let result;
-            if (text.includes('"events"')) result = parseJson3Transcript(text);
-            else result = parseXmlTranscript(text);
-            if (result.text.length > 50) return result;
+            if (text.startsWith('WEBVTT')) result = parseVttTranscript(text);
+            else if (text.includes('"events"')) result = parseJson3Transcript(text);
+            else if (text.includes('<transcript')) result = parseXmlTranscript(text);
+            if (result && result.text.length > 50) {
+              console.log(`Success with: ${(attempt as any).desc}`);
+              return result;
+            }
           }
         }
       } catch (e) {
@@ -223,10 +252,29 @@ async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; 
             const trackResponse = await fetch(trackUrl, { headers: commonHeaders });
             if (trackResponse.ok) {
               const text = await trackResponse.text();
-              const result = parseXmlTranscript(text);
+              let result;
+              if (text.startsWith('WEBVTT')) result = parseVttTranscript(text);
+              else if (text.includes('"events"')) result = parseJson3Transcript(text);
+              else result = parseXmlTranscript(text);
               if (result.text.length > 50) {
                 console.log(`Success with track: lang=${lang}, kind=${kind}`);
                 return result;
+              }
+              // Try VTT fallback explicitly
+              const vttParams = new URLSearchParams({ v: videoId, lang, fmt: 'vtt' });
+              if (kind) vttParams.set('kind', kind);
+              if (!lang.startsWith('en')) vttParams.set('tlang', 'en');
+              const vttTrackUrl = `https://www.youtube.com/api/timedtext?${vttParams.toString()}`;
+              const vttResp = await fetch(vttTrackUrl, { headers: commonHeaders });
+              if (vttResp.ok) {
+                const vtt = await vttResp.text();
+                if (vtt && vtt.startsWith('WEBVTT')) {
+                  const vttParsed = parseVttTranscript(vtt);
+                  if (vttParsed.text.length > 50) {
+                    console.log(`Success with VTT track: lang=${lang}, kind=${kind}`);
+                    return vttParsed;
+                  }
+                }
               }
             }
           } catch (e) {
@@ -320,6 +368,50 @@ function parseJson3Transcript(json: string): { text: string; timeline: Array<{ t
     return { text: parts.join(' '), timeline };
   } catch (e) {
     console.error('Failed to parse JSON3 transcript:', e);
+    return { text: '', timeline: [] };
+  }
+}
+
+function parseVttTranscript(vtt: string): { text: string; timeline: Array<{ time: string; text: string }> } {
+  try {
+    if (!vtt || !vtt.includes('WEBVTT')) return { text: '', timeline: [] };
+    const lines = vtt.split(/\r?\n/);
+    const parts: string[] = [];
+    const timeline: Array<{ time: string; text: string }> = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i].trim();
+      if (/^\d+$/.test(line)) { i++; continue; }
+      const timeMatch = lines[i].match(/(\d{2}:\d{2}:\d{2}\.\d{3}|\d{2}:\d{2}\.\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2}\.\d{3}|\d{2}:\d{2}\.\d{3})/);
+      if (timeMatch) {
+        const start = timeMatch[1];
+        i++;
+        const cueLines: string[] = [];
+        while (i < lines.length && lines[i].trim() !== '') {
+          cueLines.push(lines[i].trim());
+          i++;
+        }
+        const text = cueLines.join(' ').replace(/<[^>]*>/g, '').trim();
+        if (text) {
+          parts.push(text);
+          const toDisplay = (t: string) => {
+            const segs = t.split(':');
+            if (segs.length === 3) {
+              const [h, m, s] = segs;
+              return `${parseInt(h,10)}:${m.padStart(2,'0')}:${Math.floor(parseFloat(s)).toString().padStart(2,'0')}`;
+            } else {
+              const [m, s] = segs;
+              return `${parseInt(m,10)}:${Math.floor(parseFloat(s)).toString().padStart(2,'0')}`;
+            }
+          };
+          timeline.push({ time: toDisplay(start), text });
+        }
+      }
+      i++;
+    }
+    return { text: parts.join(' '), timeline };
+  } catch (e) {
+    console.error('Failed to parse VTT transcript:', e);
     return { text: '', timeline: [] };
   }
 }
