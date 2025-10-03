@@ -18,6 +18,7 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [originalContent, setOriginalContent] = useState("");
+  const [originalUrl, setOriginalUrl] = useState("");
   const { toast } = useToast();
 
   const isYouTubeUrl = (url: string): boolean => {
@@ -119,6 +120,7 @@ const Index = () => {
       let content = input;
       
       if (type === 'url') {
+        setOriginalUrl(input); // Store the original URL
         if (isYouTubeUrl(input)) {
           toast({
             title: "Extracting video transcript...",
@@ -169,6 +171,7 @@ const Index = () => {
   const handleBack = () => {
     setSummary(null);
     setOriginalContent("");
+    setOriginalUrl("");
   };
 
   return (
@@ -180,7 +183,7 @@ const Index = () => {
         {!summary ? (
           <ContentInput onSubmit={handleSubmit} isLoading={isLoading} />
         ) : (
-          <SummaryDisplay summary={summary} originalContent={originalContent} onBack={handleBack} />
+          <SummaryDisplay summary={summary} originalContent={originalContent} originalUrl={originalUrl} onBack={handleBack} />
         )}
         
         {isLoading && (

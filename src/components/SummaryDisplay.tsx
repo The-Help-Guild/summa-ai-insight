@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Languages, Copy, Check, ChevronRight } from "lucide-react";
+import { Languages, Copy, Check, ChevronRight, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -19,6 +19,7 @@ interface Summary {
 interface SummaryDisplayProps {
   summary: Summary;
   originalContent: string;
+  originalUrl?: string;
   onBack: () => void;
 }
 
@@ -38,11 +39,12 @@ const LANGUAGES = [
   { code: "hi", name: "Hindi" },
 ];
 
-export const SummaryDisplay = ({ summary, originalContent, onBack }: SummaryDisplayProps) => {
+export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }: SummaryDisplayProps) => {
   const [translatedSummary, setTranslatedSummary] = useState<Summary | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const [expandedRefs, setExpandedRefs] = useState<Set<number>>(new Set());
   const { toast } = useToast();
 
   const displaySummary = translatedSummary || summary;
@@ -96,6 +98,38 @@ export const SummaryDisplay = ({ summary, originalContent, onBack }: SummaryDisp
     toast({
       title: "Copied to clipboard",
       description: "Summary copied successfully",
+    });
+  };
+
+  const toggleReference = (index: number) => {
+    const newExpanded = new Set(expandedRefs);
+    if (newExpanded.has(index)) {
+      newExpanded.delete(index);
+    } else {
+      newExpanded.add(index);
+    }
+    setExpandedRefs(newExpanded);
+  };
+
+  const openInSource = (referenceText: string) => {
+    if (!originalUrl) {
+      toast({
+        title: "Source not available",
+        description: "Original source URL is not available for this content",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Try to create a URL with text fragment (works in Chrome and other modern browsers)
+    const encodedText = encodeURIComponent(referenceText.slice(0, 100));
+    const urlWithFragment = `${originalUrl}#:~:text=${encodedText}`;
+    
+    window.open(urlWithFragment, '_blank');
+    
+    toast({
+      title: "Opening source",
+      description: "Opening original content in new tab",
     });
   };
 
@@ -177,9 +211,44 @@ export const SummaryDisplay = ({ summary, originalContent, onBack }: SummaryDisp
                     <p className="text-base font-medium leading-relaxed">
                       {bp.point}
                     </p>
-                    <blockquote className="text-sm text-muted-foreground italic pl-4 border-l-2 border-muted-foreground/20">
-                      "{bp.reference}"
-                    </blockquote>
+                    <div className="space-y-2">
+                      <blockquote className={`text-sm text-muted-foreground italic pl-4 border-l-2 border-muted-foreground/20 ${
+                        expandedRefs.has(index) ? '' : 'line-clamp-2'
+                      }`}>
+                        "{bp.reference}"
+                      </blockquote>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleReference(index)}
+                          className="h-7 text-xs gap-1"
+                        >
+                          {expandedRefs.has(index) ? (
+                            <>
+                              <ChevronUp className="w-3 h-3" />
+                              Show less
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="w-3 h-3" />
+                              Read more
+                            </>
+                          )}
+                        </Button>
+                        {originalUrl && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openInSource(bp.reference)}
+                            className="h-7 text-xs gap-1"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            View in source
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
