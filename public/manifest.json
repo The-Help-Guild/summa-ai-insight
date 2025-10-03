@@ -1,0 +1,54 @@
+{
+  "name": "Smart Summarizer - AI-Powered Content Analysis",
+  "short_name": "Smart Summarizer",
+  "description": "Extract key insights from any content instantly with AI. Get clear bullet points with references and translate to any language.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0EA5E9",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities", "education"],
+  "screenshots": [
+    {
+      "src": "/screenshot-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/screenshot-narrow.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Summary",
+      "short_name": "Summarize",
+      "description": "Start a new content summary",
+      "url": "/",
+      "icons": [{ "src": "/favicon.ico", "sizes": "any" }]
+    }
+  ]
+}
