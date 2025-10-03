@@ -106,6 +106,40 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
     });
   };
 
+  const getExpandedContext = (referenceText: string): string => {
+    const index = originalContent.indexOf(referenceText);
+    if (index === -1) {
+      // Try to find partial match
+      const partialRef = referenceText.slice(0, Math.min(50, referenceText.length));
+      const partialIndex = originalContent.indexOf(partialRef);
+      if (partialIndex === -1) {
+        return referenceText;
+      }
+      
+      // Get surrounding context (500 chars before and after)
+      const start = Math.max(0, partialIndex - 500);
+      const end = Math.min(originalContent.length, partialIndex + referenceText.length + 500);
+      let context = originalContent.slice(start, end);
+      
+      // Add ellipsis if truncated
+      if (start > 0) context = '...' + context;
+      if (end < originalContent.length) context = context + '...';
+      
+      return context;
+    }
+    
+    // Get surrounding context (500 chars before and after)
+    const start = Math.max(0, index - 500);
+    const end = Math.min(originalContent.length, index + referenceText.length + 500);
+    let context = originalContent.slice(start, end);
+    
+    // Add ellipsis if truncated
+    if (start > 0) context = '...' + context;
+    if (end < originalContent.length) context = context + '...';
+    
+    return context;
+  };
+
   const toggleReference = (index: number) => {
     const newExpanded = new Set(expandedRefs);
     if (newExpanded.has(index)) {
@@ -261,10 +295,19 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
                       {bp.point}
                     </p>
                     <div className="space-y-2">
-                      <blockquote className={`text-sm text-muted-foreground italic pl-4 border-l-2 border-muted-foreground/20 ${
-                        expandedRefs.has(index) ? '' : 'line-clamp-2'
-                      }`}>
-                        "{bp.reference}"
+                      <blockquote className="text-sm text-muted-foreground italic pl-4 border-l-2 border-muted-foreground/20">
+                        {expandedRefs.has(index) ? (
+                          <div className="space-y-2">
+                            <div className="font-semibold text-foreground">Expanded Context:</div>
+                            <div className="whitespace-pre-wrap">
+                              "{getExpandedContext(bp.reference)}"
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="line-clamp-2">
+                            "{bp.reference}"
+                          </div>
+                        )}
                       </blockquote>
                       <div className="flex gap-2">
                         <Button
