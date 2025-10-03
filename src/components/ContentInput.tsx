@@ -25,6 +25,29 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  // Safely convert an ArrayBuffer to base64 without exceeding call stack (works for large PDFs)
+  const arrayBufferToBase64 = (buffer: ArrayBuffer): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const blob = new Blob([buffer], { type: 'application/pdf' });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          try {
+            const result = reader.result as string;
+            const base64 = result.split(',')[1] ?? '';
+            resolve(base64);
+          } catch (e) {
+            reject(e);
+          }
+        };
+        reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
+        reader.readAsDataURL(blob);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  };
+
   const clearFile = () => {
     setFileName("");
     setFileContent("");
@@ -92,9 +115,9 @@ export const ContentInput = ({ onSubmit, isLoading }: ContentInputProps) => {
           description: "Extracting text with OCR support. This may take a moment...",
         });
 
-        // Convert file to base64 for edge function
+        // Convert file to base64 for edge function (safe for large files)
         const arrayBuffer = await file.arrayBuffer();
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const base64 = await arrayBufferToBase64(arrayBuffer);
         
         const { data, error } = await supabase.functions.invoke('parse-pdf', {
           body: { 
