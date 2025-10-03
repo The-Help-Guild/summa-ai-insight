@@ -213,13 +213,11 @@ export const SummaryDisplay = ({
 
   const getExpandedContext = (bulletPoint: string, referenceText: string): { text: string; propositions: string[] } => {
     // Extract meaningful propositions (phrases) from the bullet point
-    // Split by common delimiters but keep phrases together
     const propositions = bulletPoint
       .split(/[;:,]/)
       .map(phrase => phrase.trim())
-      .filter(phrase => phrase.length > 15) // Only keep substantial phrases
+      .filter(phrase => phrase.length > 15)
       .map(phrase => {
-        // Remove common starting words to get the core proposition
         return phrase.replace(/^(the|a|an|and|or|but|however|therefore|this|these|that|those)\s+/i, '').trim();
       })
       .filter(phrase => phrase.length > 10);
@@ -235,99 +233,96 @@ export const SummaryDisplay = ({
       }
     }
     
-    // Find the reference location
+    // Find the reference location - try multiple strategies
     let referenceIndex = originalContent.indexOf(referenceText);
     if (referenceIndex === -1) {
+      // Try with first 80 chars
       const partialRef = referenceText.slice(0, Math.min(80, referenceText.length));
       referenceIndex = originalContent.indexOf(partialRef);
     }
-    
     if (referenceIndex === -1) {
-      return { text: referenceText, propositions };
-    }
-    
-    // Search for additional relevant sections containing propositions
-    const relevantSections: Array<{start: number, end: number, score: number}> = [];
-    const contentLower = originalContent.toLowerCase();
-    
-    // Split content into paragraphs (by double newlines or sentence boundaries)
-    const paragraphs = originalContent.split(/\n\n+/);
-    let currentPos = 0;
-    
-    for (const paragraph of paragraphs) {
-      const paragraphLower = paragraph.toLowerCase();
-      let score = 0;
-      
-      // Score each paragraph based on proposition matches
-      for (const proposition of propositions) {
-        const propLower = proposition.toLowerCase();
-        // Check for partial matches of the proposition
-        const words = propLower.split(/\s+/).filter(w => w.length > 3);
-        let matchCount = 0;
-        for (const word of words) {
-          if (paragraphLower.includes(word)) matchCount++;
-        }
-        // Score based on how many words from the proposition appear
-        if (matchCount > words.length * 0.5) {
-          score += matchCount;
+      // Try searching for key words from reference
+      const refWords = referenceText.split(/\s+/).filter(w => w.length > 4);
+      for (const word of refWords.slice(0, 5)) {
+        const idx = originalContent.toLowerCase().indexOf(word.toLowerCase());
+        if (idx !== -1) {
+          referenceIndex = idx;
+          break;
         }
       }
-      
-      if (score > 0) {
-        const start = originalContent.indexOf(paragraph, currentPos);
-        if (start !== -1) {
-          relevantSections.push({
-            start,
-            end: start + paragraph.length,
-            score
-          });
-        }
-      }
-      
-      currentPos += paragraph.length + 2; // Account for newlines
     }
     
-    // Sort by score and take top relevant sections
-    relevantSections.sort((a, b) => b.score - a.score);
+    // If still not found, return the reference with a warning
+    if (referenceIndex === -1) {
+      return { 
+        text: `Reference text: "${referenceText}"\n\n(Note: Could not locate exact reference in original content)`, 
+        propositions 
+      };
+    }
     
-    // Include the reference section and up to 2 additional highly relevant sections
-    const sectionsToInclude = relevantSections
-      .filter(section => 
-        Math.abs(section.start - referenceIndex) > 100 || // Different from reference location
-        (section.start <= referenceIndex && section.end >= referenceIndex) // Or contains reference
-      )
-      .slice(0, 3);
-    
-    // Combine sections
+    // Start with a larger context window around the reference
+    const minWords = 200; // Minimum words to display
+    let contextWindow = 2000; // Start with larger window
     let expandedContent = '';
-    const sortedSections = sectionsToInclude.sort((a, b) => a.start - b.start);
     
-    for (let i = 0; i < sortedSections.length; i++) {
-      const section = sortedSections[i];
-      let text = originalContent.slice(section.start, section.end).trim();
+    // Try to get context with increasing window sizes until we have enough words
+    while (expandedContent.split(/\s+/).length < minWords && contextWindow <= 8000) {
+      const start = Math.max(0, referenceIndex - contextWindow);
+      const end = Math.min(originalContent.length, referenceIndex + referenceText.length + contextWindow);
+      expandedContent = originalContent.slice(start, end).trim();
       
-      // Add context around each section (500 chars)
-      const contextStart = Math.max(0, section.start - 500);
-      const contextEnd = Math.min(originalContent.length, section.end + 500);
-      text = originalContent.slice(contextStart, contextEnd).trim();
-      
-      if (contextStart > 0) text = '...' + text;
-      if (contextEnd < originalContent.length) text = text + '...';
-      
-      expandedContent += text;
-      if (i < sortedSections.length - 1) {
-        expandedContent += '\n\n---\n\n';
+      if (expandedContent.split(/\s+/).length < minWords) {
+        contextWindow += 1000; // Increase window
+      } else {
+        break;
       }
-    }
-    
-    // If no relevant sections found, fall back to basic context
-    if (!expandedContent) {
-      const start = Math.max(0, referenceIndex - 1500);
-      const end = Math.min(originalContent.length, referenceIndex + referenceText.length + 1500);
-      expandedContent = originalContent.slice(start, end);
       
+      // Add ellipsis if truncated
       if (start > 0) expandedContent = '...' + expandedContent;
       if (end < originalContent.length) expandedContent = expandedContent + '...';
+    }
+    
+    // If we still don't have enough content, search for additional relevant paragraphs
+    if (expandedContent.split(/\s+/).length < minWords) {
+      const paragraphs = originalContent.split(/\n\n+/);
+      const relevantParagraphs: Array<{text: string, score: number}> = [];
+      
+      for (const paragraph of paragraphs) {
+        if (paragraph.length < 50) continue; // Skip very short paragraphs
+        
+        let score = 0;
+        const paragraphLower = paragraph.toLowerCase();
+        
+        // Score based on proposition matches
+        for (const proposition of propositions) {
+          const propWords = proposition.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+          let matchCount = 0;
+          for (const word of propWords) {
+            if (paragraphLower.includes(word)) matchCount++;
+          }
+          if (matchCount > propWords.length * 0.4) {
+            score += matchCount;
+          }
+        }
+        
+        // Also score based on reference text words
+        const refWords = referenceText.toLowerCase().split(/\s+/).filter(w => w.length > 4);
+        for (const word of refWords) {
+          if (paragraphLower.includes(word)) score += 1;
+        }
+        
+        if (score > 0) {
+          relevantParagraphs.push({ text: paragraph, score });
+        }
+      }
+      
+      // Sort by score and add top paragraphs
+      relevantParagraphs.sort((a, b) => b.score - a.score);
+      const topParagraphs = relevantParagraphs.slice(0, 5).map(p => p.text);
+      
+      if (topParagraphs.length > 0) {
+        expandedContent += '\n\n---\n\nAdditional relevant context:\n\n' + topParagraphs.join('\n\n---\n\n');
+      }
     }
     
     // Limit to 500 words maximum
