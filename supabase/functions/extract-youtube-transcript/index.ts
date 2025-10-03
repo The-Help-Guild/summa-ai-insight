@@ -66,23 +66,22 @@ function extractVideoId(url: string): string | null {
 async function fetchYouTubeTranscript(videoId: string): Promise<string> {
   try {
     console.log('Fetching video page...');
-    const videoPageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
-    });
-    
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept-Language': 'en-US,en;q=0.9'
+    };
+    const videoPageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, { headers });
+
     if (!videoPageResponse.ok) {
       throw new Error(`Failed to fetch video page: ${videoPageResponse.status}`);
     }
-    
+
     const videoPageHtml = await videoPageResponse.text();
     console.log('Video page fetched, length:', videoPageHtml.length);
-    
+
     // Try to extract caption tracks from ytInitialPlayerResponse
     let captionTracks: any[] = [];
-    
+
     // Method 1: Extract from ytInitialPlayerResponse
     const playerResponseMatch = videoPageHtml.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
     if (playerResponseMatch) {
@@ -95,7 +94,7 @@ async function fetchYouTubeTranscript(videoId: string): Promise<string> {
         console.log('Failed to parse playerResponse:', e);
       }
     }
-    
+
     // Method 2: Try direct captionTracks pattern
     if (captionTracks.length === 0) {
       const captionsMatch = videoPageHtml.match(/"captionTracks":(\[.*?\])/);
@@ -108,69 +107,118 @@ async function fetchYouTubeTranscript(videoId: string): Promise<string> {
         }
       }
     }
-    
-    if (captionTracks.length === 0) {
-      throw new Error('No captions available for this video');
+
+    // If captionTracks exist, try to fetch from them (with translation fallback)
+    if (captionTracks.length > 0) {
+      console.log('Available caption tracks:', captionTracks.map((t: any) => t.languageCode || t.vssId || t.name?.simpleText));
+
+      // Prefer English captions or ASR in any language
+      const englishTrack = captionTracks.find((track: any) => {
+        const langCode = track.languageCode || track.vssId;
+        return langCode === 'en' || langCode?.startsWith('en') || langCode?.includes('.en');
+      });
+      const asrTrack = captionTracks.find((track: any) => track.kind === 'asr');
+      const selectedTrack = englishTrack || asrTrack || captionTracks[0];
+
+      let captionUrl: string = selectedTrack.baseUrl;
+      if (!captionUrl) throw new Error('Caption URL not found');
+
+      // If not English, ask YouTube to translate to English when possible
+      const isEnglish = (selectedTrack.languageCode || selectedTrack.vssId || '').includes('en');
+      if (!isEnglish && !/([?&])tlang=/.test(captionUrl)) {
+        captionUrl += (captionUrl.includes('?') ? '&' : '?') + 'tlang=en';
+      }
+
+      // Prefer rich format when supported
+      if (!/([?&])fmt=/.test(captionUrl)) {
+        captionUrl += '&fmt=srv3';
+      }
+
+      console.log('Fetching captions from URL...');
+      const transcriptXml = await tryFetchText(captionUrl, headers);
+      const parsed = parseTranscriptXml(transcriptXml);
+      if (parsed) {
+        console.log('Transcript extracted from captionTracks.');
+        return parsed;
+      }
+      console.log('CaptionTracks path empty. Falling back to timedtext API.');
+    } else {
+      console.log('No captionTracks found in page. Falling back to timedtext API.');
     }
-    
-    console.log('Available caption tracks:', captionTracks.map((t: any) => t.languageCode || t.vssId));
-    
-    // Prefer English captions
-    const englishTrack = captionTracks.find((track: any) => {
-      const langCode = track.languageCode || track.vssId;
-      return langCode === 'en' || langCode?.startsWith('en') || langCode?.includes('.en');
-    });
-    
-    const selectedTrack = englishTrack || captionTracks[0];
-    console.log('Selected track:', selectedTrack.languageCode || selectedTrack.vssId);
-    
-    const captionUrl = selectedTrack.baseUrl;
-    if (!captionUrl) {
-      throw new Error('Caption URL not found');
-    }
-    
-    console.log('Fetching captions from URL...');
-    const transcriptResponse = await fetch(captionUrl);
-    if (!transcriptResponse.ok) {
-      throw new Error(`Failed to fetch captions: ${transcriptResponse.status}`);
-    }
-    
-    const transcriptXml = await transcriptResponse.text();
-    console.log('Captions XML length:', transcriptXml.length);
-    
-    // Parse XML and extract text
-    const textMatches = transcriptXml.matchAll(/<text[^>]*>(.*?)<\/text>/gs);
-    const transcriptParts: string[] = [];
-    
-    for (const match of textMatches) {
-      let text = match[1];
-      
-      // Decode HTML entities
-      text = text
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&apos;/g, "'")
-        .replace(/<[^>]*>/g, '') // Remove any HTML tags
-        .trim();
-      
-      if (text) {
-        transcriptParts.push(text);
+
+    // Fallback 1: TimedText direct English (normal then ASR)
+    const base = 'https://www.youtube.com/api/timedtext';
+    const directCandidates = [
+      `lang=en&v=${videoId}&fmt=srv3`,
+      `lang=en&kind=asr&v=${videoId}&fmt=srv3`,
+      `lang=en&v=${videoId}`,
+      `lang=en&kind=asr&v=${videoId}`,
+    ];
+    for (const q of directCandidates) {
+      const xml = await tryFetchText(`${base}?${q}`, headers);
+      const parsed = parseTranscriptXml(xml);
+      if (parsed) {
+        console.log('Transcript extracted via direct timedtext candidate:', q);
+        return parsed;
       }
     }
-    
-    const fullTranscript = transcriptParts.join(' ');
-    console.log('Transcript extracted, total length:', fullTranscript.length);
-    
-    if (fullTranscript.length === 0) {
-      throw new Error('Transcript is empty');
+
+    // Fallback 2: Get available languages and try each (with and without ASR + translated to EN)
+    const listXml = await tryFetchText(`${base}?type=list&v=${videoId}`, headers);
+    const languages = Array.from(listXml.matchAll(/<track[^>]*lang_code=\"([^\"]+)\"[^>]*>/g)).map(m => m[1]);
+    console.log('Timedtext languages available:', languages);
+
+    for (const lang of languages.slice(0, 8)) { // limit to first 8 to avoid long loops
+      const variants = [
+        `lang=${lang}&v=${videoId}&fmt=srv3`,
+        `lang=${lang}&kind=asr&v=${videoId}&fmt=srv3`,
+        `lang=${lang}&v=${videoId}&tlang=en&fmt=srv3`,
+        `lang=${lang}&kind=asr&v=${videoId}&tlang=en&fmt=srv3`,
+      ];
+      for (const q of variants) {
+        const xml = await tryFetchText(`${base}?${q}`, headers);
+        const parsed = parseTranscriptXml(xml);
+        if (parsed) {
+          console.log('Transcript extracted via timedtext languages variant:', q);
+          return parsed;
+        }
+      }
     }
-    
-    return fullTranscript;
+
+    throw new Error('No captions available for this video');
   } catch (error) {
     console.error('Error fetching transcript:', error);
     throw new Error('Could not fetch video transcript. The video may not have captions available or they may be disabled.');
+  }
+}
+
+function parseTranscriptXml(xml: string): string {
+  if (!xml || !xml.includes('<transcript')) return '';
+  const textMatches = xml.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g);
+  const parts: string[] = [];
+  for (const match of textMatches) {
+    let text = match[1]
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/<[^>]*>/g, '')
+      .trim();
+    if (text) parts.push(text);
+  }
+  const joined = parts.join(' ');
+  return joined.length > 0 ? joined : '';
+}
+
+async function tryFetchText(url: string, headers: Record<string, string>): Promise<string> {
+  try {
+    const r = await fetch(url, { headers });
+    if (!r.ok) return '';
+    return await r.text();
+  } catch (e) {
+    console.log('Fetch failed for', url, e);
+    return '';
   }
 }
