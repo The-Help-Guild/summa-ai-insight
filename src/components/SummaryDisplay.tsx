@@ -46,6 +46,8 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
   const [copied, setCopied] = useState(false);
   const [expandedRefs, setExpandedRefs] = useState<Set<number>>(new Set());
   const [originalSummaryBeforeTranslation, setOriginalSummaryBeforeTranslation] = useState<Summary>(summary);
+  const [translatedExpandedTexts, setTranslatedExpandedTexts] = useState<Map<number, string>>(new Map());
+  const [translatingRefs, setTranslatingRefs] = useState<Set<number>>(new Set());
   const { toast } = useToast();
 
   const displaySummary = translatedSummary || summary;
@@ -317,12 +319,45 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
     return parts;
   };
 
-  const toggleReference = (index: number) => {
+  const toggleReference = async (index: number) => {
     const newExpanded = new Set(expandedRefs);
     if (newExpanded.has(index)) {
       newExpanded.delete(index);
     } else {
       newExpanded.add(index);
+      
+      // If we're in translated mode and don't have a translation for this expanded text yet
+      if (translatedSummary && selectedLanguage && !translatedExpandedTexts.has(index)) {
+        setTranslatingRefs(prev => new Set(prev).add(index));
+        
+        try {
+          // Get the original expanded context
+          const originalBp = originalSummaryBeforeTranslation.bulletPoints[index];
+          const { text } = getExpandedContext(originalBp.point, originalBp.reference);
+          
+          // Translate it
+          const languageName = LANGUAGES.find(l => l.code === selectedLanguage)?.name || selectedLanguage;
+          const { data, error } = await supabase.functions.invoke('translate-content', {
+            body: { 
+              text: text,
+              targetLanguage: languageName
+            }
+          });
+
+          if (error) throw error;
+
+          // Store the translated text
+          setTranslatedExpandedTexts(prev => new Map(prev).set(index, data.translatedText));
+        } catch (error) {
+          console.error('Error translating expanded text:', error);
+        } finally {
+          setTranslatingRefs(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(index);
+            return newSet;
+          });
+        }
+      }
     }
     setExpandedRefs(newExpanded);
   };
@@ -410,17 +445,29 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
                         {expandedRefs.has(index) ? (
                           <div className="space-y-2">
                             <div className="font-semibold text-foreground">Relevant Context:</div>
-                            <div className="whitespace-pre-wrap">
-                              {(() => {
-                                // Use original bullet point and reference for finding context
-                                const originalBp = originalSummaryBeforeTranslation.bulletPoints[index];
-                                const { text, propositions } = getExpandedContext(
-                                  originalBp?.point || bp.point, 
-                                  originalBp?.reference || bp.reference
-                                );
-                                return highlightPropositions(text, propositions);
-                              })()}
-                            </div>
+                            {translatingRefs.has(index) ? (
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+                                Translating...
+                              </div>
+                            ) : (
+                              <div className="whitespace-pre-wrap">
+                                {(() => {
+                                  // If we have a translated version and we're in translated mode, show it
+                                  if (translatedSummary && translatedExpandedTexts.has(index)) {
+                                    return translatedExpandedTexts.get(index);
+                                  }
+                                  
+                                  // Otherwise show original with highlighting
+                                  const originalBp = originalSummaryBeforeTranslation.bulletPoints[index];
+                                  const { text, propositions } = getExpandedContext(
+                                    originalBp?.point || bp.point, 
+                                    originalBp?.reference || bp.reference
+                                  );
+                                  return highlightPropositions(text, propositions);
+                                })()}
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="line-clamp-2">
