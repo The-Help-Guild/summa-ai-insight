@@ -74,6 +74,8 @@ async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; 
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7',
       'Origin': 'https://www.youtube.com',
       'Referer': 'https://www.youtube.com/',
+      // Bypass regional consent walls and force EN locale
+      'Cookie': 'CONSENT=YES+cb.20210328-17-p0.en+FX+123; SOCS=CAI; PREF=hl=en',
     };
 
     const watchResp = await fetch(`https://www.youtube.com/watch?v=${videoId}`, { headers: commonHeaders });
@@ -197,7 +199,7 @@ async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; 
     ];
 
     for (const attempt of attempts) {
-      const params: Record<string, string> = { v: videoId };
+      const params: Record<string, string> = { v: videoId, hl: 'en', gl: 'US' };
       if ((attempt as any).lang) params.lang = (attempt as any).lang;
       if ((attempt as any).kind) params.kind = (attempt as any).kind;
       if ((attempt as any).fmt) params.fmt = (attempt as any).fmt;
@@ -229,7 +231,7 @@ async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; 
 
     // 3) As last resort, list available languages and try each (with/without ASR + translate to EN)
     console.log('Trying to get track list...');
-    const listUrl = `https://www.youtube.com/api/timedtext?type=list&v=${videoId}`;
+    const listUrl = `https://www.youtube.com/api/timedtext?type=list&v=${videoId}&hl=en&gl=US`;
     const listResponse = await fetch(listUrl, { headers: commonHeaders });
     if (listResponse.ok) {
       const listXml = await listResponse.text();
