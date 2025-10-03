@@ -68,12 +68,19 @@ export function GlobalSearch({ summary, translatedSummary, originalContent, orig
   const results = useMemo(() => {
     const q = query.trim();
     if (!q) return [] as { title: string; section: 'summary' | 'bullets' | 'content'; bulletIndex?: number; matches: { snippet: string }[] }[];
-    const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    
+    // Escape special regex characters and add Unicode flag for better international support
+    const escapedQuery = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(escapedQuery, "giu"); // Added 'u' flag for Unicode support
 
     return sections.map((sec) => {
       const matches: { snippet: string }[] = [];
       const window = 60;
       let m;
+      
+      // Reset regex lastIndex before each search
+      regex.lastIndex = 0;
+      
       while ((m = regex.exec(sec.text)) && matches.length < 10) {
         const start = Math.max(0, m.index - window);
         const end = Math.min(sec.text.length, m.index + m[0].length + window);
@@ -82,7 +89,11 @@ export function GlobalSearch({ summary, translatedSummary, originalContent, orig
         const suffix = sec.text.slice(m.index + m[0].length, end);
         const snippet = `${prefix}<mark class=\"bg-primary/20 text-primary rounded px-0.5\">${match}</mark>${suffix}`;
         matches.push({ snippet });
-        if (m.index === regex.lastIndex) regex.lastIndex++;
+        
+        // Prevent infinite loop
+        if (m.index === regex.lastIndex) {
+          regex.lastIndex++;
+        }
       }
       
       return { 
