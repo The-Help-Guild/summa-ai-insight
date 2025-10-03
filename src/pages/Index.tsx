@@ -72,8 +72,15 @@ const Index = () => {
 
   const fetchUrlContent = async (url: string): Promise<string> => {
     try {
-      const response = await fetch(url);
-      const html = await response.text();
+      // Use edge function to fetch URL content (bypasses CORS)
+      const { data, error } = await supabase.functions.invoke('fetch-url-content', {
+        body: { url }
+      });
+
+      if (error) throw error;
+      if (!data.html) throw new Error('No content returned');
+
+      const html = data.html;
       
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
