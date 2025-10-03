@@ -10,33 +10,67 @@ interface Summary { summary: string; bulletPoints: BulletPoint[] }
 
 interface GlobalSearchProps {
   summary: Summary | null;
+  translatedSummary: Summary | null;
   originalContent: string;
   originalUrl?: string;
   onNavigate?: (section: 'summary' | 'bullets' | 'content', bulletIndex?: number, query?: string) => void;
 }
 
-export function GlobalSearch({ summary, originalContent, originalUrl, onNavigate }: GlobalSearchProps) {
+export function GlobalSearch({ summary, translatedSummary, originalContent, originalUrl, onNavigate }: GlobalSearchProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
   const sections = useMemo(() => {
-    const list: { title: string; text: string; section: 'summary' | 'bullets' | 'content' }[] = [];
-    if (summary?.summary) list.push({ title: "Summary", text: summary.summary, section: 'summary' });
+    const list: { title: string; text: string; section: 'summary' | 'bullets' | 'content'; bulletIndex?: number }[] = [];
+    
+    // Add original summary
+    if (summary?.summary) {
+      list.push({ title: "Summary (Original)", text: summary.summary, section: 'summary' });
+    }
+    
+    // Add translated summary if available
+    if (translatedSummary?.summary) {
+      list.push({ title: "Summary (Translated)", text: translatedSummary.summary, section: 'summary' });
+    }
+    
+    // Add original bullet points
     if (summary?.bulletPoints?.length) {
       summary.bulletPoints.forEach((b, idx) => {
-        list.push({ title: `Bullet point ${idx + 1}`, text: `${b.point} (${b.reference})`, section: 'bullets' });
+        list.push({ 
+          title: `Bullet point ${idx + 1} (Original)`, 
+          text: `${b.point} (${b.reference})`, 
+          section: 'bullets',
+          bulletIndex: idx
+        });
       });
     }
-    if (originalContent) list.push({ title: "Original content", text: originalContent, section: 'content' });
+    
+    // Add translated bullet points if available
+    if (translatedSummary?.bulletPoints?.length) {
+      translatedSummary.bulletPoints.forEach((b, idx) => {
+        list.push({ 
+          title: `Bullet point ${idx + 1} (Translated)`, 
+          text: `${b.point} (${b.reference})`, 
+          section: 'bullets',
+          bulletIndex: idx
+        });
+      });
+    }
+    
+    // Add original content
+    if (originalContent) {
+      list.push({ title: "Original content", text: originalContent, section: 'content' });
+    }
+    
     return list;
-  }, [summary, originalContent]);
+  }, [summary, translatedSummary, originalContent]);
 
   const results = useMemo(() => {
     const q = query.trim();
     if (!q) return [] as { title: string; section: 'summary' | 'bullets' | 'content'; bulletIndex?: number; matches: { snippet: string }[] }[];
     const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
 
-    return sections.map((sec, secIdx) => {
+    return sections.map((sec) => {
       const matches: { snippet: string }[] = [];
       const window = 60;
       let m;
@@ -51,12 +85,12 @@ export function GlobalSearch({ summary, originalContent, originalUrl, onNavigate
         if (m.index === regex.lastIndex) regex.lastIndex++;
       }
       
-      let bulletIndex: number | undefined;
-      if (sec.section === 'bullets' && sec.title.startsWith('Bullet point ')) {
-        bulletIndex = parseInt(sec.title.replace('Bullet point ', '')) - 1;
-      }
-      
-      return { title: sec.title, section: sec.section, bulletIndex, matches };
+      return { 
+        title: sec.title, 
+        section: sec.section, 
+        bulletIndex: sec.bulletIndex, 
+        matches 
+      };
     }).filter(r => r.matches.length > 0);
   }, [sections, query]);
 
