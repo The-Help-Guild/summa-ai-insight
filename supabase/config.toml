@@ -1,1 +1,10 @@
 project_id = "zsyakwylngqsuxdkdibn"
+
+[functions.summarize-content]
+verify_jwt = false
+
+[functions.translate-content]
+verify_jwt = false
+
+[functions.extract-youtube-transcript]
+verify_jwt = false

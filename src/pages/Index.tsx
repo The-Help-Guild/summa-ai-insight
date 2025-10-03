@@ -20,6 +20,25 @@ const Index = () => {
   const [originalContent, setOriginalContent] = useState("");
   const { toast } = useToast();
 
+  const isYouTubeUrl = (url: string): boolean => {
+    return url.includes('youtube.com') || url.includes('youtu.be');
+  };
+
+  const fetchYouTubeTranscript = async (url: string): Promise<string> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('extract-youtube-transcript', {
+        body: { url }
+      });
+
+      if (error) throw error;
+      if (!data.transcript) throw new Error('No transcript available');
+
+      return data.transcript;
+    } catch (error) {
+      throw new Error('Failed to extract video transcript. The video may not have captions available.');
+    }
+  };
+
   const fetchUrlContent = async (url: string): Promise<string> => {
     try {
       const response = await fetch(url);
@@ -46,11 +65,19 @@ const Index = () => {
       let content = input;
       
       if (type === 'url') {
-        toast({
-          title: "Fetching content...",
-          description: "Extracting text from the URL",
-        });
-        content = await fetchUrlContent(input);
+        if (isYouTubeUrl(input)) {
+          toast({
+            title: "Extracting video transcript...",
+            description: "Getting captions from YouTube video",
+          });
+          content = await fetchYouTubeTranscript(input);
+        } else {
+          toast({
+            title: "Fetching content...",
+            description: "Extracting text from the URL",
+          });
+          content = await fetchUrlContent(input);
+        }
       }
 
       setOriginalContent(content);
