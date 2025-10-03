@@ -23,6 +23,8 @@ interface SummaryDisplayProps {
   onBack: () => void;
   searchHighlight?: { section: 'summary' | 'bullets' | 'content'; bulletIndex?: number; query?: string } | null;
   onSearchComplete?: () => void;
+  translatedSummary: Summary | null;
+  onTranslatedSummaryChange: (summary: Summary | null) => void;
 }
 
 const LANGUAGES = [
@@ -41,8 +43,16 @@ const LANGUAGES = [
   { code: "hi", name: "Hindi" },
 ];
 
-export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack, searchHighlight, onSearchComplete }: SummaryDisplayProps) => {
-  const [translatedSummary, setTranslatedSummary] = useState<Summary | null>(null);
+export const SummaryDisplay = ({ 
+  summary, 
+  originalContent, 
+  originalUrl, 
+  onBack, 
+  searchHighlight, 
+  onSearchComplete,
+  translatedSummary: externalTranslatedSummary,
+  onTranslatedSummaryChange
+}: SummaryDisplayProps) => {
   const [isTranslating, setIsTranslating] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<string>("");
   const [copied, setCopied] = useState(false);
@@ -51,11 +61,13 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack, 
   const [translatedExpandedTexts, setTranslatedExpandedTexts] = useState<Map<number, string>>(new Map());
   const [translatingRefs, setTranslatingRefs] = useState<Set<number>>(new Set());
   const [highlightQuery, setHighlightQuery] = useState<string>("");
+  const [translatedQuery, setTranslatedQuery] = useState<string>("");
   const bulletRefs = useRef<(HTMLDivElement | null)[]>([]);
   const summaryRef = useRef<HTMLDivElement | null>(null);
   const { toast } = useToast();
 
-  const displaySummary = translatedSummary || summary;
+  const displaySummary = externalTranslatedSummary || summary;
+  const activeQuery = externalTranslatedSummary && translatedQuery ? translatedQuery : highlightQuery;
 
   // Handle search highlight scrolling
   useEffect(() => {
@@ -89,6 +101,13 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack, 
     return text.replace(regex, '<mark class="bg-primary/20 text-primary rounded px-0.5">$1</mark>');
   };
 
+  // Reset translated query when switching back to original
+  useEffect(() => {
+    if (!externalTranslatedSummary) {
+      setTranslatedQuery("");
+    }
+  }, [externalTranslatedSummary]);
+
   const handleTranslate = async (languageCode: string) => {
     if (!languageCode) return;
     
@@ -96,13 +115,14 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack, 
     setSelectedLanguage(languageCode);
     
     // Store original summary before translation
-    if (!translatedSummary) {
+    if (!externalTranslatedSummary) {
       setOriginalSummaryBeforeTranslation(summary);
     }
 
     try {
       const languageName = LANGUAGES.find(l => l.code === languageCode)?.name || languageCode;
       
+      // Translate the summary
       const { data, error } = await supabase.functions.invoke('translate-content', {
         body: { 
           text: JSON.stringify(summary),
@@ -113,7 +133,26 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack, 
       if (error) throw error;
 
       const translated = JSON.parse(data.translatedText);
-      setTranslatedSummary(translated);
+      onTranslatedSummaryChange(translated);
+      
+      // If there's an active search query, translate it too
+      if (highlightQuery) {
+        try {
+          const { data: queryData, error: queryError } = await supabase.functions.invoke('translate-content', {
+            body: { 
+              text: highlightQuery,
+              targetLanguage: languageName
+            }
+          });
+          
+          if (!queryError && queryData?.translatedText) {
+            setTranslatedQuery(queryData.translatedText);
+          }
+        } catch (err) {
+          console.log('Failed to translate search query:', err);
+          // Continue without translated query
+        }
+      }
       
       toast({
         title: "Translation complete",
@@ -364,7 +403,7 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack, 
       newExpanded.add(index);
       
       // If we're in translated mode and don't have a translation for this expanded text yet
-      if (translatedSummary && selectedLanguage && !translatedExpandedTexts.has(index)) {
+      if (externalTranslatedSummary && selectedLanguage && !translatedExpandedTexts.has(index)) {
         setTranslatingRefs(prev => new Set(prev).add(index));
         
         try {
@@ -402,7 +441,7 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack, 
   // Auto-translate expanded sections when language changes or after translation
   useEffect(() => {
     // If not in translated mode, reset caches
-    if (!translatedSummary || !selectedLanguage) {
+    if (!externalTranslatedSummary || !selectedLanguage) {
       if (translatedExpandedTexts.size) setTranslatedExpandedTexts(new Map());
       if (translatingRefs.size) setTranslatingRefs(new Set());
       return;
@@ -453,7 +492,7 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack, 
         });
       }
     })();
-  }, [translatedSummary, selectedLanguage, expandedRefs]);
+  }, [externalTranslatedSummary, selectedLanguage, expandedRefs]);
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -511,7 +550,7 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack, 
             </h2>
             <p 
               className="text-lg leading-relaxed text-foreground/90"
-              dangerouslySetInnerHTML={{ __html: highlightText(displaySummary.summary, highlightQuery) }}
+              dangerouslySetInnerHTML={{ __html: highlightText(displaySummary.summary, activeQuery) }}
             />
           </div>
 
@@ -534,7 +573,7 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack, 
                   <div className="space-y-2">
                     <p 
                       className="text-base font-medium leading-relaxed"
-                      dangerouslySetInnerHTML={{ __html: highlightText(bp.point, highlightQuery) }}
+                      dangerouslySetInnerHTML={{ __html: highlightText(bp.point, activeQuery) }}
                     />
                     <div className="space-y-2">
                       <blockquote className="text-sm text-muted-foreground italic pl-4 border-l-2 border-muted-foreground/20">
@@ -550,7 +589,7 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack, 
                               <div className="whitespace-pre-wrap">
                                 {(() => {
                                   // If we have a translated version and we're in translated mode, show it
-                                  if (translatedSummary && translatedExpandedTexts.has(index)) {
+                                  if (externalTranslatedSummary && translatedExpandedTexts.has(index)) {
                                     return translatedExpandedTexts.get(index);
                                   }
                                   

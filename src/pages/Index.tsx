@@ -19,6 +19,7 @@ interface Summary {
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [translatedSummary, setTranslatedSummary] = useState<Summary | null>(null);
   const [originalContent, setOriginalContent] = useState("");
   const [originalUrl, setOriginalUrl] = useState("");
   const [searchHighlight, setSearchHighlight] = useState<{ section: 'summary' | 'bullets' | 'content'; bulletIndex?: number; query?: string } | null>(null);
@@ -191,6 +192,7 @@ const Index = () => {
 
   const handleBack = () => {
     setSummary(null);
+    setTranslatedSummary(null);
     setOriginalContent("");
     setOriginalUrl("");
     setSearchHighlight(null);
@@ -204,7 +206,7 @@ const Index = () => {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex flex-col">
       <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
         <GlobalSearch 
-          summary={summary} 
+          summary={translatedSummary || summary} 
           originalContent={originalContent} 
           originalUrl={originalUrl}
           onNavigate={handleNavigate}
@@ -222,6 +224,8 @@ const Index = () => {
             onBack={handleBack}
             searchHighlight={searchHighlight}
             onSearchComplete={() => setSearchHighlight(null)}
+            translatedSummary={translatedSummary}
+            onTranslatedSummaryChange={setTranslatedSummary}
           />
         )}
         
