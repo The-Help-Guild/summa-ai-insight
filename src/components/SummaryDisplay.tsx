@@ -45,6 +45,7 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
   const [selectedLanguage, setSelectedLanguage] = useState<string>("");
   const [copied, setCopied] = useState(false);
   const [expandedRefs, setExpandedRefs] = useState<Set<number>>(new Set());
+  const [originalSummaryBeforeTranslation, setOriginalSummaryBeforeTranslation] = useState<Summary>(summary);
   const { toast } = useToast();
 
   const displaySummary = translatedSummary || summary;
@@ -54,6 +55,11 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
     
     setIsTranslating(true);
     setSelectedLanguage(languageCode);
+    
+    // Store original summary before translation
+    if (!translatedSummary) {
+      setOriginalSummaryBeforeTranslation(summary);
+    }
 
     try {
       const languageName = LANGUAGES.find(l => l.code === languageCode)?.name || languageCode;
@@ -406,7 +412,12 @@ export const SummaryDisplay = ({ summary, originalContent, originalUrl, onBack }
                             <div className="font-semibold text-foreground">Relevant Context:</div>
                             <div className="whitespace-pre-wrap">
                               {(() => {
-                                const { text, propositions } = getExpandedContext(bp.point, bp.reference);
+                                // Use original bullet point and reference for finding context
+                                const originalBp = originalSummaryBeforeTranslation.bulletPoints[index];
+                                const { text, propositions } = getExpandedContext(
+                                  originalBp?.point || bp.point, 
+                                  originalBp?.reference || bp.reference
+                                );
                                 return highlightPropositions(text, propositions);
                               })()}
                             </div>
