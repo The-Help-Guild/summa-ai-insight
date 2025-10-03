@@ -28,13 +28,10 @@ serve(async (req) => {
     console.log('Extracting text from PDF, size:', bytes.length);
 
     // Dynamically import pdfjs with proper configuration
-    const pdfjsLib = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/+esm");
-    
-    // Configure worker source
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs";
+    const { getDocument } = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.mjs");
 
-    // Load the PDF document
-    const loadingTask = pdfjsLib.getDocument({ data: bytes });
+    // Load the PDF document without a worker (Deno env)
+    const loadingTask = getDocument({ data: bytes, disableWorker: true });
     const pdf = await loadingTask.promise;
     
     console.log('PDF loaded, pages:', pdf.numPages);
