@@ -135,6 +135,32 @@ export const SummaryDisplay = ({
       const translated = JSON.parse(data.translatedText);
       onTranslatedSummaryChange(translated);
       
+      // Translate all currently expanded context sections at once
+      if (expandedRefs.size > 0) {
+        const expandedIndices = Array.from(expandedRefs);
+        const translationPromises = expandedIndices.map(async (index) => {
+          const originalBp = summary.bulletPoints[index];
+          const { text } = getExpandedContext(originalBp.point, originalBp.reference);
+          
+          const { data: contextData, error: contextError } = await supabase.functions.invoke('translate-content', {
+            body: { 
+              text: text,
+              targetLanguage: languageName
+            }
+          });
+          
+          if (contextError) throw contextError;
+          return { index, translatedText: contextData.translatedText };
+        });
+        
+        const translatedContexts = await Promise.all(translationPromises);
+        const newTranslatedTexts = new Map(translatedExpandedTexts);
+        translatedContexts.forEach(({ index, translatedText }) => {
+          newTranslatedTexts.set(index, translatedText);
+        });
+        setTranslatedExpandedTexts(newTranslatedTexts);
+      }
+      
       // If there's an active search query, translate it too
       if (highlightQuery) {
         try {
