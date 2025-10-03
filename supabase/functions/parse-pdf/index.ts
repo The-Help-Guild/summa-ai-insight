@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import pdfParse from "https://esm.sh/pdf-parse@1.1.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -27,18 +26,44 @@ serve(async (req) => {
     }
 
     console.log('Extracting text from PDF, size:', bytes.length);
-    const data = await pdfParse(bytes);
-    
-    console.log('Extracted text length:', data.text.length, 'pages:', data.numpages);
 
-    if (!data.text || data.text.trim().length < 50) {
+    // Dynamically import pdfjs with proper configuration
+    const pdfjsLib = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/+esm");
+    
+    // Configure worker source
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs";
+
+    // Load the PDF document
+    const loadingTask = pdfjsLib.getDocument({ data: bytes });
+    const pdf = await loadingTask.promise;
+    
+    console.log('PDF loaded, pages:', pdf.numPages);
+
+    let fullText = '';
+    
+    // Extract text from each page
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      
+      // Concatenate all text items
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(' ');
+      
+      fullText += pageText + '\n';
+    }
+
+    console.log('Extracted text length:', fullText.length, 'pages:', pdf.numPages);
+
+    if (!fullText || fullText.trim().length < 50) {
       console.log('PDF appears to be scanned or has minimal text');
       
       return new Response(
         JSON.stringify({ 
-          text: data.text || 'This PDF appears to contain scanned images with no selectable text. Please ensure your PDF has selectable text or use an OCR tool to convert scanned pages.',
+          text: fullText || 'This PDF appears to contain scanned images with no selectable text. Please ensure your PDF has selectable text or use an OCR tool to convert scanned pages.',
           warning: 'Limited text extracted - PDF may contain scanned images',
-          pages: data.numpages
+          pages: pdf.numPages
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -46,9 +71,8 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({ 
-        text: data.text,
-        pages: data.numpages,
-        info: data.info
+        text: fullText.trim(),
+        pages: pdf.numPages
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
